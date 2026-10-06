@@ -98,15 +98,18 @@ lib/
       stream_listenable.dart      # Adapts a Cubit stream to GoRouter.refreshListenable
       navigation.dart             # popUntil / popUntilNamed for go_router
     session/
-      session_cubit.dart          # Who is signed in (Cubit<SessionState>), provided app-wide with BlocProvider
-      session_state.dart
+      session_cubit.dart          # Who is signed in (Cubit<SessionState>); saves/deletes token + cached user
+      session_state.dart          # unknown / authenticated / unauthenticated + user
       user.dart                   # User entity
+    storage/
+      secure_storage.dart         # SecureStorage: Keychain / Keystore wrapper (tokens, cached user)
+      local_storage.dart          # LocalStorage: shared_preferences wrapper for non-sensitive values
   features/
     auth/
       data/
         models/                   # Entities and API request/response models for this feature
-        repositories/             # Data access: API/SDK/storage calls, return transport data
-        services/                 # Business logic; map repository data to entities
+        repositories/             # Data access: API/SDK/storage calls; parse responses, return typed models
+        services/                 # Business logic on entities; never sees raw JSON
       ui/
         models/                   # UI state, one per screen or flow (LoginUiState)
         views/                    # Views and their view models side by side (login_view, login_view_model)
@@ -131,7 +134,9 @@ widgets  ui model    core/session
 ```
 
 - `ui/` may import from `data/`; `data/` never imports from `ui/`.
+- Parsing happens in repositories: they turn API/storage responses into typed models (entities, or result types like `SignInResult` in `data/models/`) and return those. If the backend's shape differs from an entity, parse into a response model in `data/models/` and convert it inside the repository. Services and view models never see raw JSON.
 - Views talk only to their view model. View models depend on services, never on repositories.
+- Exception: a view with no UI state that only triggers a one-off call may call its feature's service directly instead of having a view model (e.g. `SplashView` → `AuthService.restoreSession()`).
 - Features never import other features. Anything several features need lives in `core/` (e.g. `core/session`, `core/router`).
 - `core/` doesn't import from `features/`, with one exception: the route tables in `core/router/` (`auth_router.dart`, `shell_router.dart`) import feature views to register them.
 - Widgets get state and callbacks via constructors; they don't talk to view models.
@@ -148,6 +153,7 @@ widgets  ui model    core/session
 
 | Route | Path | Notes |
 |---|---|---|
+| `splash` | `/splash` | Public. Initial route; resolves the session, then leaves. |
 | `login` | `/login` | Public. Outside the tab shell. |
 | `home` | `/home` | Tab 1 |
 | `itemDetail` | `/home/items/:id` | Inside the home tab; `id` must be a positive integer |
@@ -170,7 +176,8 @@ widgets  ui model    core/session
 
   Works inside tabs, from dialogs and with pushed routes, and keeps go_router's location in sync (unlike `Navigator.popUntil`). Does nothing if the target is not in the stack (asserts in debug). If a route on the way has an `onExit` (e.g. an "unsaved changes?" dialog), it stops there; call it again after the user confirms.
 - **Tabs** use `StatefulShellRoute.indexedStack`: each tab keeps its own stack and state. Tapping the active tab pops it back to its root.
-- **Auth redirect**: the router refreshes on every `SessionCubit` change (via `StreamListenable`). Signed out, any non-public route goes to `/login?from=<where you were going>`; after sign-in the user lands on `from` (only if it is an in-app path), otherwise `/home`. Signing out from anywhere returns to login. Views never navigate after sign-in/out themselves.
+- **Splash and session restore**: the session starts as `unknown`. Until it is resolved, every location redirects to `/splash` (keeping the original in `?from=`). `SplashView` calls `AuthService.restoreSession()`, which reads the stored access token and asks the repository for its user (see **Session and storage**). Once resolved, the splash redirects to `from` / `/home` if signed in, otherwise to `/login` (still carrying `from`).
+- **Auth redirect**: the router refreshes on every `SessionCubit` change (via `StreamListenable`). Signed out, any non-public route goes to `/login?from=<where you were going>`; after sign-in the user lands on `from` (only if it is an in-app path), otherwise `/home`. Signing out from anywhere returns to login. Views never navigate after restore/sign-in/sign-out themselves.
 - **Argument protection**: path parameters are constrained in the path pattern (`items/:id([1-9]\d*)`), so a malformed deep link such as `/home/items/abc` never matches and shows the 404 page. Builders can then parse safely. Pass IDs, not objects: `extra` is lost on deep links and app restarts.
 - **404**: any unmatched location renders `NotFoundView` with a way back home. `/` redirects to `/home`.
 
@@ -190,6 +197,30 @@ View models are Cubits from [`flutter_bloc`](https://pub.dev/packages/flutter_bl
 - `AppProvider.clearAll(context)` resets app-wide state (currently the session). When a service starts holding state (caches, sockets), give it a `reset()` and call it there.
 - Views rebuild with `BlocBuilder` / `BlocSelector` and run side effects with `BlocListener`.
 - View models are tested with `bloc_test` (`blocTest`), views with widget tests that provide fakes through `RepositoryProvider`.
+
+### Session and storage
+
+Two stores in `lib/core/storage/`, both with typed key enums:
+
+| | `SecureStorage` | `LocalStorage` |
+|---|---|---|
+| Backed by | [`flutter_secure_storage`](https://pub.dev/packages/flutter_secure_storage) (Keychain / Keystore) | [`shared_preferences`](https://pub.dev/packages/shared_preferences) (`SharedPreferencesWithCache`) |
+| For | Secrets and personal data | Non-sensitive settings and flags |
+| Keys | `SecureStorageKey`: `accessToken`, `refreshToken`, `cachedUser` | `LocalStorageKey`: `hasLaunchedBefore` |
+| Reads | async | sync (cache loaded at startup) |
+| Available via | `SessionCubit` | `context.read<LocalStorage>()` (provided by `AppProvider`) |
+
+New keys must be added to the enum (`LocalStorage` only loads keys on its allow-list). Secure values that can't be decrypted are deleted and read as `null`.
+
+- `SessionCubit` owns the stored session: `start(user, token: ...)` saves the token and caches the user, `clear()` deletes both, from wherever sign-out happens.
+- On launch, `AuthService.restoreSession()`:
+  - no token → signed out;
+  - token → `AuthRepository.fetchCurrentUser(token)`; a user → signed in, `null` (token rejected) → token deleted, signed out;
+  - error (e.g. offline) → signed in as the **cached user**; with no usable cache, shown as signed out but the token is kept so the next launch retries.
+- `FakeAuthRepository` issues tokens that encode the email, so signing in, killing the app and relaunching restores the same user.
+- **First launch**: `main()` calls `SecureStorage.clearOnFirstLaunch(localStorage)` before `runApp`. iOS deletes preferences on uninstall but keeps Keychain items, so a missing `hasLaunchedBefore` flag means a fresh install and leftover secrets are wiped; a reinstall starts signed out. (If you add this to an app that is already released, existing users are signed out once on update, since they don't have the flag yet.)
+- iOS: Keychain items use `KeychainAccessibility.first_unlock`, so they stay readable for background work after the first unlock.
+- Android: `android:allowBackup="false"` in `AndroidManifest.xml`. Auto Backup would restore encrypted values onto a device without the key, which can't decrypt them.
 
 ### Naming
 

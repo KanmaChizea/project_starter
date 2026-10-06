@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:project_starter/core/session/session_cubit.dart';
+import 'package:project_starter/core/storage/local_storage.dart';
 import 'package:project_starter/features/auth/data/repositories/auth_repository.dart';
 import 'package:project_starter/features/auth/data/services/auth_service.dart';
 import 'package:project_starter/features/home/data/repositories/home_repository.dart';
@@ -9,13 +10,19 @@ import 'package:project_starter/features/profile/data/repositories/profile_repos
 import 'package:project_starter/features/profile/data/services/profile_service.dart';
 
 class AppProvider extends StatelessWidget {
-  const AppProvider({super.key, required this.session, required this.child});
+  const AppProvider({
+    super.key,
+    required this.session,
+    required this.localStorage,
+    required this.child,
+  });
 
   final SessionCubit session;
+  final LocalStorage localStorage;
   final Widget child;
 
-  static void clearAll(BuildContext context) {
-    context.read<SessionCubit>().clear();
+  static Future<void> clearAll(BuildContext context) async {
+    await context.read<SessionCubit>().clear();
   }
 
   @override
@@ -24,6 +31,7 @@ class AppProvider extends StatelessWidget {
       providers: [BlocProvider.value(value: session)],
       child: MultiRepositoryProvider(
         providers: [
+          RepositoryProvider.value(value: localStorage),
           RepositoryProvider(
             create: (_) => AuthService(FakeAuthRepository(), session),
           ),

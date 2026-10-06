@@ -3,29 +3,42 @@ import 'package:project_starter/core/session/user.dart';
 
 import '../repositories/auth_repository.dart';
 
-/// Auth flows (sign-in, sign-out). Records the result in [SessionCubit].
-/// View models talk to this, never to repositories.
 class AuthService {
   AuthService(this._repository, this._session);
 
   final AuthRepository _repository;
   final SessionCubit _session;
 
+  Future<void> restoreSession() async {
+    if (_session.isResolved) return;
+    try {
+      final token = await _session.readToken();
+      final user = token == null
+          ? null
+          : await _repository.fetchCurrentUser(token);
+      if (user == null) {
+        await _session.clear();
+      } else {
+        await _session.start(user);
+      }
+    } catch (_) {
+      final cached = await _session.readCachedUser();
+      if (cached != null) {
+        await _session.start(cached);
+      } else {
+        await _session.clear(forgetToken: false);
+      }
+    }
+  }
+
   Future<User> signIn({required String email, required String password}) async {
-    final json = await _repository.signIn(email: email, password: password);
-    final user = _userFromJson(json);
-    _session.start(user);
-    return user;
+    final result = await _repository.signIn(email: email, password: password);
+    await _session.start(result.user, token: result.token);
+    return result.user;
   }
 
   Future<void> signOut() async {
     await _repository.signOut();
-    _session.clear();
+    await _session.clear();
   }
-
-  User _userFromJson(Map<String, Object?> json) => User(
-    id: json['id']! as String,
-    email: json['email']! as String,
-    displayName: json['name'] as String?,
-  );
 }

@@ -12,5 +12,5 @@ class ProfileService {
 
   User? get currentUser => _session.user;
 
-  void signOut() => _session.clear();
+  Future<void> signOut() => _session.clear();
 }

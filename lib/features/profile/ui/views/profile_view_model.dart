@@ -9,5 +9,5 @@ class ProfileViewModel extends Cubit<ProfileUiState> {
 
   final ProfileService _profileService;
 
-  void signOut() => _profileService.signOut();
+  Future<void> signOut() => _profileService.signOut();
 }

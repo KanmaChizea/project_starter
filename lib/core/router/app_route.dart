@@ -2,11 +2,11 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 /// Every route in the app. [name] is the enum name; [path] is relative for
-/// nested routes. Navigate with the [AppNavigation] helpers, not raw strings.
+/// nested routes. Navigate by name: `context.goNamed(AppRoute.home.name)`.
 enum AppRoute {
+  splash('/splash', isPublic: true),
   login('/login', isPublic: true),
   home('/home'),
-  itemDetail(r'items/:id([1-9]\d*)'),
   profile('/profile');
 
   const AppRoute(this.path, {this.isPublic = false});
