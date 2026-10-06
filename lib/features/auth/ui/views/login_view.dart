@@ -28,43 +28,30 @@ class _LoginBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final viewModel = context.read<LoginViewModel>();
 
-    // One-off side effects (navigation, snackbars) go in listeners, not build.
-    return BlocListener<LoginViewModel, LoginUiState>(
-      listenWhen: (previous, current) =>
-          previous.user == null && current.user != null,
-      listener: (context, state) {
-        // TODO: navigate to home once routing is set up.
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(content: Text('Signed in as ${state.user!.email}')),
-          );
-      },
-      child: Scaffold(
-        body: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Welcome back',
-                      style: Theme.of(context).textTheme.headlineMedium,
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Welcome back',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                  const SizedBox(height: 32),
+                  BlocBuilder<LoginViewModel, LoginUiState>(
+                    builder: (context, state) => LoginForm(
+                      state: state,
+                      onEmailChanged: viewModel.onEmailChanged,
+                      onPasswordChanged: viewModel.onPasswordChanged,
+                      onSubmit: viewModel.submit,
                     ),
-                    const SizedBox(height: 32),
-                    BlocBuilder<LoginViewModel, LoginUiState>(
-                      builder: (context, state) => LoginForm(
-                        state: state,
-                        onEmailChanged: viewModel.onEmailChanged,
-                        onPasswordChanged: viewModel.onPasswordChanged,
-                        onSubmit: viewModel.submit,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),

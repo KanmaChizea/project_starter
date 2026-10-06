@@ -30,7 +30,7 @@ class _HomeBody extends StatelessWidget {
           if (state.isLoading) {
             return const Center(child: CircularProgressIndicator());
           }
-          return const Center(child: Text('Home'));
+          return Container();
         },
       ),
     );

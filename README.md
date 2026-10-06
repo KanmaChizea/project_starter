@@ -88,8 +88,18 @@ lib/
   core/
     config/
       flavor.dart                 # Flavor enum + Flavor.current
+    router/
+      app_route.dart              # AppRoute enum (name, path, isPublic)
+      app_router.dart             # GoRouter: combines route groups, 404, root redirect
+      auth_router.dart            # Auth routes (login, …) + auth redirect
+      shell_router.dart           # Tab shell (StatefulShellRoute) and its branches
+      app_shell.dart              # Bottom navigation bar for the tab branches
+      not_found_view.dart
+      stream_listenable.dart      # Adapts a Cubit stream to GoRouter.refreshListenable
+      navigation.dart             # popUntil / popUntilNamed for go_router
     session/
-      session_service.dart        # Who is signed in; ChangeNotifier the whole app can listen to
+      session_cubit.dart          # Who is signed in (Cubit<SessionState>), provided app-wide with BlocProvider
+      session_state.dart
       user.dart                   # User entity
   features/
     auth/
@@ -101,7 +111,8 @@ lib/
         models/                   # UI state, one per screen or flow (LoginUiState)
         views/                    # Views and their view models side by side (login_view, login_view_model)
         widgets/                  # Feature widgets (login_form, auth_text_field, ...)
-  main.dart                       # Composition root: app-wide dependencies via RepositoryProvider
+  main.dart                       # Entry point: creates the session and router, runs App (MaterialApp.router)
+  provider.dart                   # AppProvider: app-wide Cubits (BlocProvider) and services (RepositoryProvider)
 test/                             # Mirrors lib/
 tool/
   rename.dart                     # App name / ID / package rename script
@@ -121,10 +132,53 @@ widgets  ui model    core/session
 
 - `ui/` may import from `data/`; `data/` never imports from `ui/`.
 - Views talk only to their view model. View models depend on services, never on repositories.
-- Features never import other features. Anything several features need lives in `core/` (e.g. `core/session`).
+- Features never import other features. Anything several features need lives in `core/` (e.g. `core/session`, `core/router`).
+- `core/` doesn't import from `features/`, with one exception: the route tables in `core/router/` (`auth_router.dart`, `shell_router.dart`) import feature views to register them.
 - Widgets get state and callbacks via constructors; they don't talk to view models.
 - One-off effects (navigation, snackbars) go in a `BlocListener` in the view, not in `build`.
 - Imports outside the current feature use `package:` imports; relative imports only within a feature.
+
+### Navigation
+
+[go_router](https://pub.dev/packages/go_router), configured in `lib/core/router/`:
+
+- `app_router.dart` creates the `GoRouter` and combines the route groups.
+- `auth_router.dart` holds the public auth routes and the auth redirect.
+- `shell_router.dart` holds the tab shell; each tab is a branch.
+
+| Route | Path | Notes |
+|---|---|---|
+| `login` | `/login` | Public. Outside the tab shell. |
+| `home` | `/home` | Tab 1 |
+| `itemDetail` | `/home/items/:id` | Inside the home tab; `id` must be a positive integer |
+| `profile` | `/profile` | Tab 2 |
+
+- **Routes** are declared once in the `AppRoute` enum (`lib/core/router/app_route.dart`): the enum name is the route name, plus its path and whether it is public.
+- **Navigate by name** using the enum, never raw path strings:
+
+  ```dart
+  context.goNamed(AppRoute.home.name);
+  context.pushNamed(AppRoute.itemDetail.name, pathParameters: {'id': '$id'});
+  ```
+
+- **Pop until** a page further down the stack (`lib/core/router/navigation.dart`), mirroring `go` / `goNamed`:
+
+  ```dart
+  context.popUntilNamed(AppRoute.home.name);   // by route name
+  context.popUntil('/home');                   // by location
+  ```
+
+  Works inside tabs, from dialogs and with pushed routes, and keeps go_router's location in sync (unlike `Navigator.popUntil`). Does nothing if the target is not in the stack (asserts in debug). If a route on the way has an `onExit` (e.g. an "unsaved changes?" dialog), it stops there; call it again after the user confirms.
+- **Tabs** use `StatefulShellRoute.indexedStack`: each tab keeps its own stack and state. Tapping the active tab pops it back to its root.
+- **Auth redirect**: the router refreshes on every `SessionCubit` change (via `StreamListenable`). Signed out, any non-public route goes to `/login?from=<where you were going>`; after sign-in the user lands on `from` (only if it is an in-app path), otherwise `/home`. Signing out from anywhere returns to login. Views never navigate after sign-in/out themselves.
+- **Argument protection**: path parameters are constrained in the path pattern (`items/:id([1-9]\d*)`), so a malformed deep link such as `/home/items/abc` never matches and shows the 404 page. Builders can then parse safely. Pass IDs, not objects: `extra` is lost on deep links and app restarts.
+- **404**: any unmatched location renders `NotFoundView` with a way back home. `/` redirects to `/home`.
+
+#### Adding a route
+
+1. Add it to `AppRoute` (relative `path` if nested; constrain parameters with a regex).
+2. Register it with `AppRoute.x.toGoRoute((state) => XView(...))`: in `shell_router.dart` under the right branch for a tab screen, in `auth_router.dart` for auth screens, or in `app_router.dart` for other full-screen routes.
+3. A new tab also needs a `StatefulShellBranch` in `shell_router.dart` and a destination in `app_shell.dart` (same order).
 
 ### State management
 
@@ -132,7 +186,8 @@ View models are Cubits from [`flutter_bloc`](https://pub.dev/packages/flutter_bl
 
 - UI state classes are immutable, extend `Equatable`, and expose `copyWith`. View models change state only with `emit(state.copyWith(...))`.
 - A view creates its own view model with `BlocProvider(create: ...)`, so the view model lives exactly as long as the route.
-- App-wide services are provided once in `main.dart` with `RepositoryProvider` and read with `context.read<T>()`.
+- App-wide state and services are registered in `AppProvider` (`lib/provider.dart`): Cubits with `BlocProvider`, plain services with `RepositoryProvider`. Services that need the session take it in their constructor.
+- `AppProvider.clearAll(context)` resets app-wide state (currently the session). When a service starts holding state (caches, sockets), give it a `reset()` and call it there.
 - Views rebuild with `BlocBuilder` / `BlocSelector` and run side effects with `BlocListener`.
 - View models are tested with `bloc_test` (`blocTest`), views with widget tests that provide fakes through `RepositoryProvider`.
 
@@ -162,9 +217,8 @@ lib/features/user_profile/
   ui/models/edit_profile_ui_state.dart
   ui/views/edit_profile_view.dart
   ui/views/edit_profile_view_model.dart
-test/features/user_profile/ui/views/edit_profile_view_model_test.dart
 ```
 
-For a new feature it prints the line to register its service in `main.dart`. Add `data/models/` and `ui/widgets/` when the feature needs them.
+For a new feature it prints the line to register its service in `lib/provider.dart`. Add `data/models/` and `ui/widgets/` when the feature needs them, and put its tests under `test/features/<feature>/`, mirroring `lib/`.
 
 In VS Code: **Tasks: Run Task → New feature / screen**.

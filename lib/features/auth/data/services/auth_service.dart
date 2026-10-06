@@ -1,15 +1,15 @@
-import 'package:project_starter/core/session/session_service.dart';
+import 'package:project_starter/core/session/session_cubit.dart';
 import 'package:project_starter/core/session/user.dart';
 
 import '../repositories/auth_repository.dart';
 
-/// Auth flows (sign-in, sign-out). Records the result in [SessionService].
+/// Auth flows (sign-in, sign-out). Records the result in [SessionCubit].
 /// View models talk to this, never to repositories.
 class AuthService {
   AuthService(this._repository, this._session);
 
   final AuthRepository _repository;
-  final SessionService _session;
+  final SessionCubit _session;
 
   Future<User> signIn({required String email, required String password}) async {
     final json = await _repository.signIn(email: email, password: password);

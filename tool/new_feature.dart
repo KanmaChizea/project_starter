@@ -26,7 +26,6 @@ void main(List<String> argv) {
   final f = _Names(feature);
   final s = _Names(screen);
   final lib = 'lib/features/$feature';
-  final test = 'test/features/$feature';
   final isNewFeature = !Directory(lib).existsSync();
 
   final files = {
@@ -35,7 +34,6 @@ void main(List<String> argv) {
     '$lib/ui/models/${s.snake}_ui_state.dart': _uiState(s),
     '$lib/ui/views/${s.snake}_view_model.dart': _viewModel(f, s),
     '$lib/ui/views/${s.snake}_view.dart': _view(f, s),
-    '$test/ui/views/${s.snake}_view_model_test.dart': _viewModelTest(package, f, s),
   };
 
   stdout.writeln(isNewFeature ? 'Creating feature "$feature"' : 'Adding to feature "$feature"');
@@ -56,13 +54,20 @@ void main(List<String> argv) {
   if (isNewFeature) {
     stdout.writeln('''
 
-Next: register the service in lib/main.dart (MultiRepositoryProvider):
+Next: register the service in lib/provider.dart (AppProvider → MultiRepositoryProvider):
 
   import 'package:$package/features/$feature/data/repositories/${f.snake}_repository.dart';
   import 'package:$package/features/$feature/data/services/${f.snake}_service.dart';
 
   RepositoryProvider(create: (_) => ${f.pascal}Service(${f.pascal}Repository())),''');
   }
+
+  stdout.writeln('''
+
+Then make ${s.pascal}View reachable (README → Navigation → Adding a route):
+  1. lib/core/router/app_route.dart   add AppRoute.${s.camel}
+  2. lib/core/router/shell_router.dart (tab) or auth_router.dart / app_router.dart (full screen):
+     AppRoute.${s.camel}.toGoRoute((_) => const ${s.pascal}View())''');
 }
 
 // ---------------------------------------------------------------------------
@@ -168,30 +173,6 @@ class _${s.pascal}Body extends StatelessWidget {
       ),
     );
   }
-}
-''';
-
-String _viewModelTest(String package, _Names f, _Names s) => '''
-import 'package:flutter_test/flutter_test.dart';
-import 'package:$package/features/${f.snake}/data/repositories/${f.snake}_repository.dart';
-import 'package:$package/features/${f.snake}/data/services/${f.snake}_service.dart';
-import 'package:$package/features/${f.snake}/ui/models/${s.snake}_ui_state.dart';
-import 'package:$package/features/${f.snake}/ui/views/${s.snake}_view_model.dart';
-
-void main() {
-  late ${s.pascal}ViewModel viewModel;
-
-  setUp(() {
-    viewModel = ${s.pascal}ViewModel(
-      ${f.camel}Service: ${f.pascal}Service(${f.pascal}Repository()),
-    );
-  });
-
-  tearDown(() => viewModel.close());
-
-  test('starts in the initial state', () {
-    expect(viewModel.state, const ${s.pascal}UiState());
-  });
 }
 ''';
 
