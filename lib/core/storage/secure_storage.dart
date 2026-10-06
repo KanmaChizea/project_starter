@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -6,8 +7,11 @@ import 'local_storage.dart';
 enum SecureStorageKey { accessToken, refreshToken, cachedUser }
 
 class SecureStorage {
-  SecureStorage({FlutterSecureStorage? storage})
-    : _storage = storage ?? const FlutterSecureStorage(iOptions: _iosOptions);
+  factory SecureStorage() => _instance;
+
+  SecureStorage._();
+
+  static final _instance = SecureStorage._();
 
   // Readable after the first unlock, so background work (e.g. push handling)
   // can still read tokens.
@@ -15,19 +19,27 @@ class SecureStorage {
     accessibility: KeychainAccessibility.first_unlock,
   );
 
-  final FlutterSecureStorage _storage;
+  final _storage = const FlutterSecureStorage(iOptions: _iosOptions);
+
+  /// A key that is present but null means "known to have no value".
+  final _cache = <SecureStorageKey, String?>{};
 
   Future<String?> read(SecureStorageKey key) async {
+    if (_cache.containsKey(key)) return _cache[key];
+    final String? value;
     try {
-      return await _storage.read(key: key.name);
+      value = await _storage.read(key: key.name);
     } on PlatformException {
       await delete(key);
       return null;
     }
+    return _cache.putIfAbsent(key, () => value);
   }
 
-  Future<void> write(SecureStorageKey key, String value) =>
-      _storage.write(key: key.name, value: value);
+  Future<void> write(SecureStorageKey key, String value) async {
+    await _storage.write(key: key.name, value: value);
+    _cache[key] = value;
+  }
 
   Future<void> delete(SecureStorageKey key) async {
     try {
@@ -35,7 +47,12 @@ class SecureStorage {
     } on PlatformException {
       //
     }
+    _cache[key] = null;
   }
+
+  /// For tests that swap the underlying storage between cases.
+  @visibleForTesting
+  void resetCache() => _cache.clear();
 
   Future<void> clear() async {
     for (final key in SecureStorageKey.values) {

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:project_starter/core/network/api_client.dart';
 import 'package:project_starter/core/session/session_cubit.dart';
 import 'package:project_starter/core/storage/local_storage.dart';
 import 'package:project_starter/features/auth/data/repositories/auth_repository.dart';
@@ -14,11 +15,13 @@ class AppProvider extends StatelessWidget {
     super.key,
     required this.session,
     required this.localStorage,
+    required this.apiClient,
     required this.child,
   });
 
   final SessionCubit session;
   final LocalStorage localStorage;
+  final ApiClient apiClient;
   final Widget child;
 
   static Future<void> clearAll(BuildContext context) async {
@@ -33,7 +36,7 @@ class AppProvider extends StatelessWidget {
         providers: [
           RepositoryProvider.value(value: localStorage),
           RepositoryProvider(
-            create: (_) => AuthService(FakeAuthRepository(), session),
+            create: (_) => AuthService(AuthRepository(apiClient), session),
           ),
           RepositoryProvider(create: (_) => HomeService(HomeRepository())),
           RepositoryProvider(

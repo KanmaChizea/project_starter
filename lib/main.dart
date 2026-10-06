@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:project_starter/core/config/env_config.dart';
 import 'package:project_starter/core/config/flavor.dart';
+import 'package:project_starter/core/network/dio_api_client.dart';
 import 'package:project_starter/core/router/app_router.dart';
 import 'package:project_starter/core/session/session_cubit.dart';
 import 'package:project_starter/core/storage/local_storage.dart';
@@ -9,17 +11,19 @@ import 'package:project_starter/provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await EnvConfig.init(Flavor.current);
 
   final localStorage = await LocalStorage.create();
-  final secureStorage = SecureStorage();
-  await secureStorage.clearOnFirstLaunch(localStorage);
+  await SecureStorage().clearOnFirstLaunch(localStorage);
 
-  final session = SessionCubit(secureStorage);
+  final session = SessionCubit();
+  final apiClient = DioApiClient(onSessionExpired: session.clear);
 
   runApp(
     AppProvider(
       session: session,
       localStorage: localStorage,
+      apiClient: apiClient,
       child: App(router: createAppRouter(session)),
     ),
   );

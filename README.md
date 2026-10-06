@@ -54,6 +54,23 @@ Where flavors are configured:
 2. In Xcode, duplicate the `Debug`/`Release`/`Profile` configurations as `*-<flavor>` (set `APP_DISPLAY_NAME`), and duplicate a scheme named `<flavor>` using them.
 3. Add the value to the `Flavor` enum.
 4. Add its suffix (or `''` for none) to `flavorSuffixes` in `tool/rename.dart`, and to `.vscode/launch.json` / `tasks.json`.
+5. Create `env/.env.<flavor>` with every key and add it to the flavor-specific assets in `pubspec.yaml`.
+
+### Environment config
+
+Per-flavor values live in `env/.env.dev`, `env/.env.staging` and `env/.env.prod`:
+
+```
+BASE_URL=https://api.dev.example.com
+```
+
+`main()` calls `EnvConfig.init(Flavor.current)`, which loads the matching file and fails fast if a required key is missing. Read values through `EnvConfig` (`lib/core/config/env_config.dart`): `EnvConfig.baseUrl`, `EnvConfig.envName`, `EnvConfig.isProd` / `isStaging` / `isDev`.
+
+Each file is declared as a flavor-specific asset in `pubspec.yaml`, so a build only bundles its own flavor's file (a prod build contains no dev or staging URLs).
+
+To add a value: add the key to all three files, then a getter in `EnvConfig` and the key to its required list in `init`.
+
+> Env files are bundled into the app and can be read by anyone with the APK/IPA. Use them for configuration (URLs, feature flags), not secrets.
 
 ## Running
 
@@ -88,6 +105,9 @@ lib/
   core/
     config/
       flavor.dart                 # Flavor enum + Flavor.current
+      env_config.dart             # EnvConfig: per-flavor values from env/.env.<flavor>
+    constants/
+      endpoints.dart              # Endpoints: API paths
     router/
       app_route.dart              # AppRoute enum (name, path, isPublic)
       app_router.dart             # GoRouter: combines route groups, 404, root redirect
@@ -97,13 +117,26 @@ lib/
       not_found_view.dart
       stream_listenable.dart      # Adapts a Cubit stream to GoRouter.refreshListenable
       navigation.dart             # popUntil / popUntilNamed for go_router
+    network/
+      api_client.dart             # ApiClient interface: every call returns Result<Response<T>>
+      dio_api_client.dart         # DioApiClient: the Dio implementation
+      dio_exception_mapper.dart   # Default DioException → AppException mapping (used by the client)
+      network_exception.dart      # AppException subclasses: Network / Unauthorized / Server
+      auth_interceptor.dart       # Bearer token, 401 → refresh → retry
+      auth_tokens.dart            # Access + refresh token pair
+      logging_interceptor.dart    # Hooks NetworkLogger into Dio
+      network_logger.dart         # NetworkLogger: boxed request/response/error logs via debugPrint
     session/
-      session_cubit.dart          # Who is signed in (Cubit<SessionState>); saves/deletes token + cached user
+      session_cubit.dart          # Who is signed in (Cubit<SessionState>); cached user, saves tokens on sign-in
       session_state.dart          # unknown / authenticated / unauthenticated + user
       user.dart                   # User entity
     storage/
       secure_storage.dart         # SecureStorage: Keychain / Keystore wrapper (tokens, cached user)
       local_storage.dart          # LocalStorage: shared_preferences wrapper for non-sensitive values
+    utils/
+      result.dart                 # Result<T>: Ok / Error(AppException) + map / fold
+      app_exception.dart          # AppException(message, statusCode) + Parse / Unknown
+      async_value.dart            # AsyncValue<T>: loading / data / error for UI state
   features/
     auth/
       data/
@@ -134,7 +167,7 @@ widgets  ui model    core/session
 ```
 
 - `ui/` may import from `data/`; `data/` never imports from `ui/`.
-- Parsing happens in repositories: they turn API/storage responses into typed models (entities, or result types like `SignInResult` in `data/models/`) and return those. If the backend's shape differs from an entity, parse into a response model in `data/models/` and convert it inside the repository. Services and view models never see raw JSON.
+- Parsing and endpoint-specific error handling happen in repositories: they `map` API/storage responses into typed models (entities, or result types like `SignInResult` in `data/models/`), special-case errors where an endpoint needs it, and return a `Result`. If the backend's shape differs from an entity, parse into a response model in `data/models/` and convert it inside the repository. Services and view models never see raw JSON.
 - Views talk only to their view model. View models depend on services, never on repositories.
 - Exception: a view with no UI state that only triggers a one-off call may call its feature's service directly instead of having a view model (e.g. `SplashView` → `AuthService.restoreSession()`).
 - Features never import other features. Anything several features need lives in `core/` (e.g. `core/session`, `core/router`).
@@ -208,19 +241,91 @@ Two stores in `lib/core/storage/`, both with typed key enums:
 | For | Secrets and personal data | Non-sensitive settings and flags |
 | Keys | `SecureStorageKey`: `accessToken`, `refreshToken`, `cachedUser` | `LocalStorageKey`: `hasLaunchedBefore` |
 | Reads | async | sync (cache loaded at startup) |
-| Available via | `SessionCubit` | `context.read<LocalStorage>()` (provided by `AppProvider`) |
+| Available via | `SecureStorage()` (singleton) | `context.read<LocalStorage>()` (provided by `AppProvider`) |
 
 New keys must be added to the enum (`LocalStorage` only loads keys on its allow-list). Secure values that can't be decrypted are deleted and read as `null`.
 
-- `SessionCubit` owns the stored session: `start(user, token: ...)` saves the token and caches the user, `clear()` deletes both, from wherever sign-out happens.
+- `SecureStorage` is a singleton: `SecureStorage()` always returns the same instance, so classes use it directly instead of having it passed in. It keeps an in-memory cache: each key is read from the device once, then served from memory, so attaching the token to every request costs a map lookup. Writes and deletes update the cache, so it can't go stale (unless another isolate writes to secure storage directly). In tests that swap the mocked storage between cases, call `SecureStorage().resetCache()`. Tokens are read and written by `AuthInterceptor` (attach, refresh) and `SessionCubit` (save on sign-in, delete on sign-out).
+- `SessionCubit`: `start(user, tokens: ...)` saves the tokens and caches the user, `clear()` deletes everything, from wherever sign-out happens.
 - On launch, `AuthService.restoreSession()`:
-  - no token → signed out;
-  - token → `AuthRepository.fetchCurrentUser(token)`; a user → signed in, `null` (token rejected) → token deleted, signed out;
-  - error (e.g. offline) → signed in as the **cached user**; with no usable cache, shown as signed out but the token is kept so the next launch retries.
-- `FakeAuthRepository` issues tokens that encode the email, so signing in, killing the app and relaunching restores the same user.
+  - no access token → signed out;
+  - `AuthRepository.fetchCurrentUser()` → `Ok(user)` → signed in; `Error(UnauthorizedException)` (refresh also failed) → everything deleted, signed out;
+  - any other error (e.g. offline) → signed in as the **cached user**; with no usable cache, shown as signed out but the tokens are kept so the next launch retries.
 - **First launch**: `main()` calls `SecureStorage.clearOnFirstLaunch(localStorage)` before `runApp`. iOS deletes preferences on uninstall but keeps Keychain items, so a missing `hasLaunchedBefore` flag means a fresh install and leftover secrets are wiped; a reinstall starts signed out. (If you add this to an app that is already released, existing users are signed out once on update, since they don't have the flag yet.)
 - iOS: Keychain items use `KeychainAccessibility.first_unlock`, so they stay readable for background work after the first unlock.
 - Android: `android:allowBackup="false"` in `AndroidManifest.xml`. Auto Backup would restore encrypted values onto a device without the key, which can't decrypt them.
+
+### Networking
+
+[Dio](https://pub.dev/packages/dio) behind the `ApiClient` interface (`lib/core/network/api_client.dart`), implemented by `DioApiClient`. Repositories depend on `ApiClient`, so tests can hand them a fake. `DioApiClient` reads `EnvConfig.baseUrl` and enables logging outside prod by itself. `main()` creates the single instance and passes it to `AppProvider`, which hands it to repositories through their constructors (e.g. `AuthRepository(apiClient)`); it is not in the widget tree. Keep it to one instance: concurrent 401s share a refresh only within the same client.
+
+The network layer doesn't know about the session: `DioApiClient` only takes an `onSessionExpired` callback, which `main()` wires to `session.clear`.
+
+**The client returns `Result`; repositories map it.** Every `ApiClient` call returns `Ok(response)` or `Error(AppException)`, already mapped with the HTTP `statusCode` and the server's message. A repository usually just parses the body with `map`, and handles an endpoint-specific error by matching on it before falling back to the default:
+
+```dart
+// Default handling: one line.
+Future<Result<User>> fetchCurrentUser() async {
+  final result = await _api.get<Map<String, Object?>>(Endpoints.me);
+  return result.map((response) => User.fromJson(response.data!));
+}
+
+// Endpoint-specific handling: match the error first.
+Future<Result<SignInResult>> signIn({required String email, required String password}) async {
+  final result = await _api.post<Map<String, Object?>>(
+    Endpoints.login,
+    data: {'email': email, 'password': password},
+  );
+  return switch (result) {
+    Error(error: AppException(statusCode: 401)) =>
+      const Result.error(AppException('Invalid email or password.', statusCode: 401)),
+    _ => result.map((response) => SignInResult.fromJson(response.data!)),
+  };
+}
+```
+
+- `result.map(transform)` converts the value; if `transform` throws (the body doesn't match the model) the result is a `ParseException`, so a bad response never crashes.
+- `result.fold(onError, onOk)` is there when you want `Either`-style branching.
+
+Services and view models never see Dio; they switch on the `Result`:
+
+```dart
+// Service / view model: switch on it.
+switch (await _authService.signIn(email: email, password: password)) {
+  case Ok(:final value): ...
+  case Error(:final error): ...   // error.message, error.statusCode
+}
+```
+
+- `Result.error` always carries an `AppException` (`lib/core/utils/app_exception.dart`): a `message` safe to show the user and a `statusCode` (the HTTP status when there was a response, otherwise `null`). View models can show `error.message` directly.
+- `ApiClient`: `get/post/put/patch/delete<T>` (with `query`, `data`), `upload<T>(FormData)` (Dio sets the multipart boundary; optional `onSendProgress` and `method`), `download(path, savePath)`.
+- The default mapping (`e.toAppException()` in `lib/core/network/dio_exception_mapper.dart`, applied by the client) produces the network subclasses (`lib/core/network/network_exception.dart`):
+  - `NetworkException`: offline, DNS, timeouts.
+  - `UnauthorizedException`: 401 on a request that carried a token, after a failed refresh (`statusCode` 401).
+  - `ServerException`: any other non-2xx; `message` comes from the body's `message` field.
+  - `UnknownException`: anything else.
+- `ParseException` (`lib/core/utils/app_exception.dart`): produced by `result.map` when parsing throws.
+- For non-network failures (validation, storage, …), return `AppException('message')` or a subclass of it.
+- Note: `Error` here is the `Result` subclass and shadows `dart:core`'s `Error` in files that import `result.dart`.
+- `AsyncValue<T>` (`lib/core/utils/async_value.dart`) is available for UI state that is simply loading / data / error: convert a `Result` with `AsyncValue.data(value)` / `AsyncValue.error(error.message)` and render with `state.when(...)`.
+
+**Auth.** No per-call flag: the token is attached whenever one is stored, and only to our own API.
+
+- `AuthInterceptor` adds `Authorization: Bearer <accessToken>` from `SecureStorage` when a token exists **and** the request goes to `BASE_URL`'s scheme, host and port. Full URLs to other hosts (presigned S3 uploads/downloads, CDNs, third-party APIs) never get the token. Signed out, there is no token, so login/sign-up/password-reset calls go out without one.
+- On a 401 it refreshes once (`POST /auth/refresh` with the refresh token), saves the new tokens and retries the request. Concurrent 401s share a single refresh.
+- Refresh rejected (400/401/403) → `onSessionExpired` (clears the session → router goes to login); the request returns `UnauthorizedException`. Refresh failed for other reasons (offline, 5xx) → session kept, request fails.
+- Retried uploads re-send a clone of the `FormData` (a sent `FormData` can't be reused).
+- Only a request that carried a token triggers a refresh. A 401 without one (e.g. wrong password on login) is a `ServerException` with `statusCode` 401, not a sign-out.
+
+**Logging.** `LoggingInterceptor` passes every request, response and error to `NetworkLogger` (`lib/core/network/network_logger.dart`), which prints boxed blocks (method, URL, query, headers, body / status, data / error type) with `debugPrint`. It only logs in debug builds (`kDebugMode`), and the interceptor is only added outside prod. Bodies are never truncated: long lines are split into 800-character chunks so Android's logcat doesn't cut them off. `Authorization`, `Cookie` and `Set-Cookie` show as `***HIDDEN***`; comment them out of `_sensitiveHeaders` locally if you need to see them. `NetworkLogger.log('...')` is available for ad-hoc messages.
+
+**Adapting to your backend** (marked with `TODO`):
+
+- API hosts: `BASE_URL` in `env/.env.<flavor>`.
+- Endpoint paths: `lib/core/constants/endpoints.dart` (`Endpoints`). Add new paths there rather than inline in repositories.
+- Refresh request/response body: `AuthInterceptor._refresh()` and `AuthTokens.fromJson`.
+- Error message field: `serverMessage` in `dio_exception_mapper.dart`.
+- Auth payloads and error statuses: `AuthRepository` (`lib/features/auth/data/repositories/auth_repository.dart`).
 
 ### Naming
 

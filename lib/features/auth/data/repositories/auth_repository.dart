@@ -1,58 +1,40 @@
-import 'dart:convert';
-
+import 'package:project_starter/core/constants/endpoints.dart';
+import 'package:project_starter/core/network/api_client.dart';
 import 'package:project_starter/core/session/user.dart';
+import 'package:project_starter/core/utils/app_exception.dart';
+import 'package:project_starter/core/utils/result.dart';
 
 import '../models/sign_in_result.dart';
 
-abstract interface class AuthRepository {
-  Future<SignInResult> signIn({
-    required String email,
-    required String password,
-  });
+// TODO: match your backend's auth endpoints, payloads and error statuses.
+class AuthRepository {
+  AuthRepository(this._api);
 
-  Future<User?> fetchCurrentUser(String token);
+  final ApiClient _api;
 
-  Future<void> signOut();
-}
-
-class FakeAuthRepository implements AuthRepository {
-  FakeAuthRepository({this.delay = const Duration(milliseconds: 600)});
-
-  final Duration delay;
-
-  static const _tokenPrefix = 'fake-token.';
-
-  @override
-  Future<SignInResult> signIn({
+  Future<Result<SignInResult>> signIn({
     required String email,
     required String password,
   }) async {
-    await Future<void>.delayed(delay);
-    if (password.length < 6) {
-      throw Exception('Invalid email or password.');
-    }
-    return SignInResult(
-      token: '$_tokenPrefix${base64Url.encode(utf8.encode(email))}',
-      user: _user(email),
+    final result = await _api.post<Map<String, Object?>>(
+      Endpoints.login,
+      data: {'email': email, 'password': password},
     );
+    return switch (result) {
+      Error(error: AppException(statusCode: 401)) => const Result.error(
+        AppException('Invalid email or password.', statusCode: 401),
+      ),
+      _ => result.map((response) => SignInResult.fromJson(response.data!)),
+    };
   }
 
-  @override
-  Future<User?> fetchCurrentUser(String token) async {
-    await Future<void>.delayed(delay);
-    if (!token.startsWith(_tokenPrefix)) return null;
-    try {
-      final email = utf8.decode(
-        base64Url.decode(token.substring(_tokenPrefix.length)),
-      );
-      return _user(email);
-    } on FormatException {
-      return null;
-    }
+  Future<Result<User>> fetchCurrentUser() async {
+    final result = await _api.get<Map<String, Object?>>(Endpoints.me);
+    return result.map((response) => User.fromJson(response.data!));
   }
 
-  @override
-  Future<void> signOut() => Future<void>.delayed(delay);
-
-  User _user(String email) => User(id: 'fake-${email.hashCode}', email: email);
+  Future<Result<void>> signOut() async {
+    final result = await _api.post<void>(Endpoints.logout);
+    return result.map((_) {});
+  }
 }

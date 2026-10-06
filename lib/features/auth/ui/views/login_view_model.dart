@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:project_starter/core/utils/result.dart';
 
 import '../../data/services/auth_service.dart';
 import '../models/login_ui_state.dart';
@@ -18,21 +19,22 @@ class LoginViewModel extends Cubit<LoginUiState> {
     if (!state.canSubmit) return;
     emit(state.copyWith(isSubmitting: true, errorMessage: () => null));
 
-    try {
-      final user = await _authService.signIn(
-        email: state.email,
-        password: state.password,
-      );
-      if (isClosed) return;
-      emit(state.copyWith(isSubmitting: false, user: () => user));
-    } catch (_) {
-      if (isClosed) return;
-      emit(
-        state.copyWith(
-          isSubmitting: false,
-          errorMessage: () => 'Something went wrong. Please try again.',
-        ),
-      );
+    final result = await _authService.signIn(
+      email: state.email,
+      password: state.password,
+    );
+    if (isClosed) return;
+
+    switch (result) {
+      case Ok(:final value):
+        emit(state.copyWith(isSubmitting: false, user: () => value));
+      case Error(:final error):
+        emit(
+          state.copyWith(
+            isSubmitting: false,
+            errorMessage: () => error.message,
+          ),
+        );
     }
   }
 }

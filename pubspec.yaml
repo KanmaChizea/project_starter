@@ -39,7 +39,8 @@ dependencies:
   go_router: ^18.0.2
   flutter_secure_storage: ^11.2.0
   shared_preferences: ^2.5.6
-
+  dio: ^5.11.1
+  flutter_dotenv: ^6.0.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -53,6 +54,15 @@ dev_dependencies:
   bloc_test: ^10.0.0
 flutter:
   default-flavor: dev
+
+  # Each flavor bundles only its own env file.
+  assets:
+    - path: env/.env.dev
+      flavors: [dev]
+    - path: env/.env.staging
+      flavors: [staging]
+    - path: env/.env.prod
+      flavors: [prod]
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

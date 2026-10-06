@@ -2,14 +2,15 @@ import 'dart:convert';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../network/auth_tokens.dart';
 import '../storage/secure_storage.dart';
 import 'session_state.dart';
 import 'user.dart';
 
 class SessionCubit extends Cubit<SessionState> {
-  SessionCubit(this._storage) : super(const SessionState.unknown());
+  SessionCubit() : super(const SessionState.unknown());
 
-  final SecureStorage _storage;
+  final _storage = SecureStorage();
 
   User? get user => state.user;
 
@@ -17,7 +18,8 @@ class SessionCubit extends Cubit<SessionState> {
 
   bool get isResolved => state.isResolved;
 
-  Future<String?> readToken() => _storage.read(SecureStorageKey.accessToken);
+  Future<String?> readAccessToken() =>
+      _storage.read(SecureStorageKey.accessToken);
 
   Future<User?> readCachedUser() async {
     final raw = await _storage.read(SecureStorageKey.cachedUser);
@@ -30,10 +32,11 @@ class SessionCubit extends Cubit<SessionState> {
     }
   }
 
-  /// Pass [token] on sign-in; omit it when restoring with the stored token.
-  Future<void> start(User user, {String? token}) async {
-    if (token != null) {
-      await _storage.write(SecureStorageKey.accessToken, token);
+  /// Pass [tokens] on sign-in; omit them when restoring with stored tokens.
+  Future<void> start(User user, {AuthTokens? tokens}) async {
+    if (tokens != null) {
+      await _storage.write(SecureStorageKey.accessToken, tokens.accessToken);
+      await _storage.write(SecureStorageKey.refreshToken, tokens.refreshToken);
     }
     await _storage.write(
       SecureStorageKey.cachedUser,
@@ -42,7 +45,7 @@ class SessionCubit extends Cubit<SessionState> {
     emit(SessionState.authenticated(user));
   }
 
-  /// Signs out. [forgetToken] false keeps the stored token, e.g. when it
+  /// Signs out. [forgetToken] false keeps the stored tokens, e.g. when they
   /// could not be checked because the device is offline.
   Future<void> clear({bool forgetToken = true}) async {
     if (forgetToken) await _storage.clear();
