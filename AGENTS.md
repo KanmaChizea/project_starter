@@ -1,0 +1,1 @@
+- Always use package imports for imports outside the feature

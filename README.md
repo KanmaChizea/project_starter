@@ -81,15 +81,90 @@ In VS Code: **Tasks: Run Task** (or `Cmd+Shift+B`) → `Build: Android APK`, `Bu
 
 ## Project structure
 
+Feature-first MVVM with a **data** and **ui** layer per feature. Each feature lives in `lib/features/<feature>/`; app-wide code lives in `lib/core/`.
+
 ```
 lib/
   core/
     config/
-      flavor.dart     # Flavor enum + Flavor.current
-  main.dart
+      flavor.dart                 # Flavor enum + Flavor.current
+    session/
+      session_service.dart        # Who is signed in; ChangeNotifier the whole app can listen to
+      user.dart                   # User entity
+  features/
+    auth/
+      data/
+        models/                   # Entities and API request/response models for this feature
+        repositories/             # Data access: API/SDK/storage calls, return transport data
+        services/                 # Business logic; map repository data to entities
+      ui/
+        models/                   # UI state, one per screen or flow (LoginUiState)
+        views/                    # Views and their view models side by side (login_view, login_view_model)
+        widgets/                  # Feature widgets (login_form, auth_text_field, ...)
+  main.dart                       # Composition root: app-wide dependencies via RepositoryProvider
+test/                             # Mirrors lib/
 tool/
-  rename.dart         # App name / ID / package rename script
+  rename.dart                     # App name / ID / package rename script
+  new_feature.dart                # Feature / screen scaffolding
 .vscode/
-  launch.json         # Run configurations per flavor and mode
-  tasks.json          # Build and rename tasks
+  launch.json                     # Run configurations per flavor and mode
+  tasks.json                      # Build, rename and scaffolding tasks
 ```
+
+### Dependency direction
+
+```
+view → view model → service → repository
+  ↓         ↓           ↓
+widgets  ui model    core/session
+```
+
+- `ui/` may import from `data/`; `data/` never imports from `ui/`.
+- Views talk only to their view model. View models depend on services, never on repositories.
+- Features never import other features. Anything several features need lives in `core/` (e.g. `core/session`).
+- Widgets get state and callbacks via constructors; they don't talk to view models.
+- One-off effects (navigation, snackbars) go in a `BlocListener` in the view, not in `build`.
+- Imports outside the current feature use `package:` imports; relative imports only within a feature.
+
+### State management
+
+View models are Cubits from [`flutter_bloc`](https://pub.dev/packages/flutter_bloc): `LoginViewModel extends Cubit<LoginUiState>`.
+
+- UI state classes are immutable, extend `Equatable`, and expose `copyWith`. View models change state only with `emit(state.copyWith(...))`.
+- A view creates its own view model with `BlocProvider(create: ...)`, so the view model lives exactly as long as the route.
+- App-wide services are provided once in `main.dart` with `RepositoryProvider` and read with `context.read<T>()`.
+- Views rebuild with `BlocBuilder` / `BlocSelector` and run side effects with `BlocListener`.
+- View models are tested with `bloc_test` (`blocTest`), views with widget tests that provide fakes through `RepositoryProvider`.
+
+### Naming
+
+Folders stay flat; the file name prefix shows ownership:
+
+- `<screen>_view.dart`, `<screen>_view_model.dart`, `<screen>_ui_state.dart` — one screen.
+- Multi-step flows (e.g. sign-up) share **one** view model and UI state across their views: `signup_view_model.dart`, `signup_ui_state.dart`, `signup_account_view.dart`, `signup_verify_view.dart`, …
+- `<screen>_*.dart` widgets belong to one screen; `<feature>_*.dart` widgets are shared across the feature.
+
+If a feature's `views/` gets crowded (15+ files), group by flow: `ui/views/signup/`.
+
+### Adding a feature
+
+```sh
+dart run tool/new_feature.dart user_profile                         # new feature, screen = user_profile
+dart run tool/new_feature.dart user_profile --screen edit_profile   # add a screen to it
+```
+
+Creates (never overwrites existing files):
+
+```
+lib/features/user_profile/
+  data/repositories/user_profile_repository.dart
+  data/services/user_profile_service.dart
+  ui/models/edit_profile_ui_state.dart
+  ui/views/edit_profile_view.dart
+  ui/views/edit_profile_view_model.dart
+test/features/user_profile/ui/views/edit_profile_view_model_test.dart
+```
+
+For a new feature it prints the line to register its service in `main.dart`. Add `data/models/` and `ui/widgets/` when the feature needs them.
+
+In VS Code: **Tasks: Run Task → New feature / screen**.

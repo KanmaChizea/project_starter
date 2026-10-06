@@ -58,6 +58,14 @@
       "command": "dart",
       "args": ["run", "tool/rename.dart", "--name=${input:appName}", "--id=${input:appId}", "--package=${input:dartPackage}"],
       "problemMatcher": []
+    },
+    {
+      "label": "New feature / screen",
+      "detail": "dart run tool/new_feature.dart <feature> --screen <screen>",
+      "type": "shell",
+      "command": "dart",
+      "args": ["run", "tool/new_feature.dart", "${input:featureName}", "--screen=${input:screenName}"],
+      "problemMatcher": []
     }
   ],
   "inputs": [
@@ -89,6 +97,16 @@
       "id": "dartPackage",
       "type": "promptString",
       "description": "Dart package name, e.g. my_app. Blank = keep."
+    },
+    {
+      "id": "featureName",
+      "type": "promptString",
+      "description": "Feature name (lower_snake_case), e.g. user_profile"
+    },
+    {
+      "id": "screenName",
+      "type": "promptString",
+      "description": "Screen name (lower_snake_case). Blank = same as feature."
     }
   ]
 }
