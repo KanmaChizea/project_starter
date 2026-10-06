@@ -1,0 +1,71 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build: Android APK",
+      "detail": "flutter build apk --flavor <flavor> --<mode>",
+      "type": "shell",
+      "command": "flutter",
+      "args": ["build", "apk", "--flavor", "${input:flavor}", "--${input:mode}"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Build: Android App Bundle",
+      "detail": "flutter build appbundle --flavor <flavor> --<mode>",
+      "type": "shell",
+      "command": "flutter",
+      "args": ["build", "appbundle", "--flavor", "${input:flavor}", "--${input:mode}"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Build: iOS IPA",
+      "detail": "flutter build ipa --flavor <flavor> --<mode> (requires signing)",
+      "type": "shell",
+      "command": "flutter",
+      "args": ["build", "ipa", "--flavor", "${input:flavor}", "--${input:mode}"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Build: iOS (no codesign)",
+      "detail": "flutter build ios --flavor <flavor> --<mode> --no-codesign",
+      "type": "shell",
+      "command": "flutter",
+      "args": ["build", "ios", "--flavor", "${input:flavor}", "--${input:mode}", "--no-codesign"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Build: All platforms",
+      "detail": "APK, App Bundle and IPA for the chosen flavor and mode",
+      "dependsOrder": "sequence",
+      "dependsOn": ["Build: Android APK", "Build: Android App Bundle", "Build: iOS IPA"],
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Flutter: Clean",
+      "type": "shell",
+      "command": "flutter clean && flutter pub get",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "flavor",
+      "type": "pickString",
+      "description": "Flavor",
+      "options": ["dev", "staging", "prod"],
+      "default": "dev"
+    },
+    {
+      "id": "mode",
+      "type": "pickString",
+      "description": "Build mode",
+      "options": ["release", "profile", "debug"],
+      "default": "release"
+    }
+  ]
+}
