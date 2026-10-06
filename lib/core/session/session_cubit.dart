@@ -12,6 +12,12 @@ class SessionCubit extends Cubit<SessionState> {
 
   final _storage = SecureStorage();
 
+  static const _sessionKeys = [
+    SecureStorageKey.accessToken,
+    SecureStorageKey.refreshToken,
+    SecureStorageKey.cachedUser,
+  ];
+
   User? get user => state.user;
 
   bool get isSignedIn => state.isSignedIn;
@@ -34,10 +40,7 @@ class SessionCubit extends Cubit<SessionState> {
 
   /// Pass [tokens] on sign-in; omit them when restoring with stored tokens.
   Future<void> start(User user, {AuthTokens? tokens}) async {
-    if (tokens != null) {
-      await _storage.write(SecureStorageKey.accessToken, tokens.accessToken);
-      await _storage.write(SecureStorageKey.refreshToken, tokens.refreshToken);
-    }
+    if (tokens != null) await _storage.saveTokens(tokens);
     await _storage.write(
       SecureStorageKey.cachedUser,
       jsonEncode(user.toJson()),
@@ -48,7 +51,11 @@ class SessionCubit extends Cubit<SessionState> {
   /// Signs out. [forgetToken] false keeps the stored tokens, e.g. when they
   /// could not be checked because the device is offline.
   Future<void> clear({bool forgetToken = true}) async {
-    if (forgetToken) await _storage.clear();
+    if (forgetToken) {
+      for (final key in _sessionKeys) {
+        await _storage.delete(key);
+      }
+    }
     if (state.status == SessionStatus.unauthenticated) return;
     emit(const SessionState.unauthenticated());
   }

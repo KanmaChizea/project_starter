@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:project_starter/core/network/api_client.dart';
 import 'package:project_starter/core/session/session_cubit.dart';
+import 'package:project_starter/core/session/session_state.dart';
 import 'package:project_starter/core/storage/local_storage.dart';
 import 'package:project_starter/features/auth/data/repositories/auth_repository.dart';
 import 'package:project_starter/features/auth/data/services/auth_service.dart';
@@ -43,7 +44,12 @@ class AppProvider extends StatelessWidget {
             create: (_) => ProfileService(ProfileRepository(apiClient)),
           ),
         ],
-        child: child,
+        child: BlocListener<SessionCubit, SessionState>(
+          listenWhen: (previous, current) =>
+              previous.isSignedIn && !current.isSignedIn,
+          listener: (context, _) => clearAll(context),
+          child: child,
+        ),
       ),
     );
   }

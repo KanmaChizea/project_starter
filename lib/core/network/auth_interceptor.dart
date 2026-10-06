@@ -90,8 +90,7 @@ class AuthInterceptor extends QueuedInterceptor {
         data: {'refreshToken': refreshToken},
       );
       final tokens = AuthTokens.fromJson(response.data!);
-      await _storage.write(SecureStorageKey.accessToken, tokens.accessToken);
-      await _storage.write(SecureStorageKey.refreshToken, tokens.refreshToken);
+      await _storage.saveTokens(tokens);
       return _Refreshed(tokens);
     } on DioException catch (e) {
       final status = e.response?.statusCode;

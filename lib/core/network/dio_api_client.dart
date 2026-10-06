@@ -1,7 +1,8 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 
 import '../config/env_config.dart';
+import '../utils/app_exception.dart';
+import '../utils/app_logger.dart';
 import '../utils/result.dart';
 import 'api_client.dart';
 import 'auth_interceptor.dart';
@@ -22,56 +23,52 @@ class DioApiClient implements ApiClient {
     _dio.interceptors.add(
       AuthInterceptor(plainDio: plainDio, onSessionExpired: onSessionExpired),
     );
-    if (!kReleaseMode) {
-      plainDio.interceptors.add(LoggingInterceptor());
-      _dio.interceptors.add(LoggingInterceptor());
-    }
+    plainDio.interceptors.add(LoggingInterceptor());
+    _dio.interceptors.add(LoggingInterceptor());
   }
 
   late final Dio _dio;
 
   @override
-  Future<Result<Response<T>>> get<T>(
-    String path, {
-    Map<String, Object?>? query,
-  }) => _guard(() => _dio.get<T>(path, queryParameters: query));
+  Future<Result<T>> get<T>(String path, {Map<String, Object?>? query}) =>
+      _guard(() => _dio.get(path, queryParameters: query));
 
   @override
-  Future<Result<Response<T>>> post<T>(
+  Future<Result<T>> post<T>(
     String path, {
     Object? data,
     Map<String, Object?>? query,
-  }) => _guard(() => _dio.post<T>(path, data: data, queryParameters: query));
+  }) => _guard(() => _dio.post(path, data: data, queryParameters: query));
 
   @override
-  Future<Result<Response<T>>> put<T>(
+  Future<Result<T>> put<T>(
     String path, {
     Object? data,
     Map<String, Object?>? query,
-  }) => _guard(() => _dio.put<T>(path, data: data, queryParameters: query));
+  }) => _guard(() => _dio.put(path, data: data, queryParameters: query));
 
   @override
-  Future<Result<Response<T>>> patch<T>(
+  Future<Result<T>> patch<T>(
     String path, {
     Object? data,
     Map<String, Object?>? query,
-  }) => _guard(() => _dio.patch<T>(path, data: data, queryParameters: query));
+  }) => _guard(() => _dio.patch(path, data: data, queryParameters: query));
 
   @override
-  Future<Result<Response<T>>> delete<T>(
+  Future<Result<T>> delete<T>(
     String path, {
     Object? data,
     Map<String, Object?>? query,
-  }) => _guard(() => _dio.delete<T>(path, data: data, queryParameters: query));
+  }) => _guard(() => _dio.delete(path, data: data, queryParameters: query));
 
   @override
-  Future<Result<Response<T>>> upload<T>(
+  Future<Result<T>> upload<T>(
     String path, {
     required FormData data,
     String method = 'POST',
     ProgressCallback? onSendProgress,
   }) => _guard(
-    () => _dio.request<T>(
+    () => _dio.request(
       path,
       data: data,
       onSendProgress: onSendProgress,
@@ -80,12 +77,12 @@ class DioApiClient implements ApiClient {
   );
 
   @override
-  Future<Result<Response<Object?>>> download(
+  Future<Result<void>> download(
     String path,
     String savePath, {
     Map<String, Object?>? query,
     ProgressCallback? onReceiveProgress,
-  }) => _guard(
+  }) => _guard<void>(
     () => _dio.download(
       path,
       savePath,
@@ -94,13 +91,21 @@ class DioApiClient implements ApiClient {
     ),
   );
 
-  Future<Result<Response<T>>> _guard<T>(
-    Future<Response<T>> Function() request,
-  ) async {
+  /// Returns the response body as [T]. A body that isn't a [T] (e.g. null
+  /// for a non-nullable type) is a [ParseException].
+  Future<Result<T>> _guard<T>(Future<Response> Function() request) async {
+    final Response response;
     try {
-      return Result.ok(await request());
+      response = await request();
     } on DioException catch (e) {
       return Result.error(e.toAppException());
     }
+    final data = response.data;
+    if (data is T) return Result.ok(data);
+    AppLogger.log(
+      'ParseException: expected $T, got ${data.runtimeType} '
+      'from ${response.requestOptions.uri}',
+    );
+    return Result.error(ParseException(statusCode: response.statusCode));
   }
 }

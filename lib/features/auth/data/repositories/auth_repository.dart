@@ -24,17 +24,16 @@ class AuthRepository {
       Error(error: AppException(statusCode: 401)) => const Result.error(
         AppException('Invalid email or password.', statusCode: 401),
       ),
-      _ => result.map((response) => SignInResult.fromJson(response.data!)),
+      _ => result.map(SignInResult.fromJson),
     };
   }
 
   Future<Result<User>> fetchCurrentUser() async {
     final result = await _api.get<Map<String, Object?>>(Endpoints.me);
-    return result.map((response) => User.fromJson(response.data!));
+    return result.map(User.fromJson);
   }
 
-  Future<Result<void>> signOut() async {
-    final result = await _api.post<void>(Endpoints.logout);
-    return result.map((_) {});
+  Future<Result<void>> signOut() {
+    return _api.post<void>(Endpoints.logout);
   }
 }

@@ -1,10 +1,7 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:project_starter/core/session/session_cubit.dart';
 import 'package:project_starter/features/auth/data/services/auth_service.dart';
-import 'package:project_starter/provider.dart';
 
 import '../../data/services/profile_service.dart';
 import '../models/profile_ui_state.dart';
@@ -48,18 +45,12 @@ class _ProfileBody extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.logout),
                 title: const Text('Sign out'),
-                onTap: () => _signOut(context),
+                onTap: context.read<AuthService>().signOut,
               ),
             ],
           );
         },
       ),
     );
-  }
-
-  void _signOut(BuildContext context) {
-    final authService = context.read<AuthService>();
-    authService.signOut();
-    unawaited(AppProvider.clearAll(context));
   }
 }

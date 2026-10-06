@@ -64,8 +64,8 @@ class AuthService {
     }
   }
 
-  void signOut() {
-    _repository.signOut();
-    _session.clear();
+  Future<void> signOut() async {
+    await _repository.signOut();
+    await _session.clear();
   }
 }

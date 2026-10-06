@@ -64,7 +64,7 @@ Per-flavor values live in `env/.env.dev`, `env/.env.staging` and `env/.env.prod`
 BASE_URL=https://api.dev.example.com
 ```
 
-`main()` calls `EnvConfig.init(Flavor.current)`, which loads the matching file and fails fast if a required key is missing. Read values through `EnvConfig` (`lib/core/config/env_config.dart`): `EnvConfig.baseUrl`, `EnvConfig.envName`, `EnvConfig.isProd` / `isStaging` / `isDev`.
+`main()` calls `EnvConfig.init(Flavor.current)`, which loads the matching file and fails fast if a required key is missing. Read values through `EnvConfig` (`lib/core/config/env_config.dart`), e.g. `EnvConfig.baseUrl`. `EnvConfig` only returns env values; for flavor checks use `Flavor.current` (`Flavor.current.isProd`).
 
 Each file is declared as a flavor-specific asset in `pubspec.yaml`, so a build only bundles its own flavor's file (a prod build contains no dev or staging URLs).
 
@@ -118,7 +118,7 @@ lib/
       stream_listenable.dart      # Adapts a Cubit stream to GoRouter.refreshListenable
       navigation.dart             # popUntil / popUntilNamed for go_router
     network/
-      api_client.dart             # ApiClient interface: every call returns Result<Response<T>>
+      api_client.dart             # ApiClient interface: every call returns Result<T> (the response body)
       dio_api_client.dart         # DioApiClient: the Dio implementation
       dio_exception_mapper.dart   # Default DioException → AppException mapping (used by the client)
       network_exception.dart      # AppException subclasses: Network / Unauthorized / Server
@@ -227,16 +227,9 @@ View models are Cubits from [`flutter_bloc`](https://pub.dev/packages/flutter_bl
 - UI state classes are immutable, extend `Equatable`, and expose `copyWith`. View models change state only with `emit(state.copyWith(...))`.
 - A view creates its own view model with `BlocProvider(create: ...)`, so the view model lives exactly as long as the route.
 - App-wide state and services are registered in `AppProvider` (`lib/provider.dart`): Cubits with `BlocProvider`, plain services with `RepositoryProvider`. Services that need the session take it in their constructor.
-- **Sign-out** belongs to auth: `AuthService.signOut()` calls `/auth/logout` and clears the session even if that request fails. After it, reset app-wide state with `AppProvider.clearAll`. The Profile view does both:
+- **Sign-out** belongs to auth: `AuthService.signOut()` awaits `/auth/logout` first, while the tokens still exist (an expired access token is refreshed so logout can still reach the server), then clears the session even if logout failed. The Profile view just calls `context.read<AuthService>().signOut()`.
 
-  ```dart
-  final authService = context.read<AuthService>();
-  final clearAll = AppProvider.clearAll(context);   // read before the await
-  await authService.signOut();
-  clearAll();
-  ```
-
-- **`AppProvider.clearAll(context)`** (`lib/provider.dart`) only resets app-wide state. It reads services immediately and returns the reset as a callback, because the calling screen is gone once the session clears. When a service starts holding state (caches, sockets), give it a `reset()`, read it in `clearAll` and call `reset()` in the returned callback.
+- **`AppProvider.clearAll(context)`** (`lib/provider.dart`) resets app-wide state. `AppProvider` runs it automatically whenever a signed-in session ends (a `BlocListener` on `SessionCubit`), so explicit sign-out and forced sign-outs (rejected token refresh, etc.) are all covered and nobody calls it by hand. When a service starts holding state (caches, sockets), give it a `reset()` and call it in `clearAll`.
 - **App-wide state in screens**: views read app-wide state such as the signed-in user straight from `SessionCubit` with `context.select((SessionCubit s) => s.state.user)` (see `ProfileView`). `select` rebuilds only when that value changes. View models hold screen-specific state and actions; they don't copy session data into their UI state, and feature services don't re-expose it. Put it in the view model only when the screen derives something from it together with its own data, or edits a copy of it.
 - Views rebuild with `BlocBuilder` / `BlocSelector` and run side effects with `BlocListener`.
 - View models are tested with `bloc_test` (`blocTest`), views with widget tests that provide fakes through `RepositoryProvider`.
@@ -256,7 +249,7 @@ Two stores in `lib/core/storage/`, both with typed key enums:
 New keys must be added to the enum (`LocalStorage` only loads keys on its allow-list). Secure values that can't be decrypted are deleted and read as `null`.
 
 - `SecureStorage` is a singleton: `SecureStorage()` always returns the same instance, so classes use it directly instead of having it passed in. It keeps an in-memory cache: each key is read from the device once, then served from memory, so attaching the token to every request costs a map lookup. Writes and deletes update the cache, so it can't go stale (unless another isolate writes to secure storage directly). In tests that swap the mocked storage between cases, call `SecureStorage().resetCache()`. Tokens are read and written by `AuthInterceptor` (attach, refresh) and `SessionCubit` (save on sign-in, delete on sign-out).
-- `SessionCubit`: `start(user, tokens: ...)` saves the tokens and caches the user, `clear()` deletes everything, from wherever sign-out happens.
+- `SessionCubit`: `start(user, tokens: ...)` saves the tokens and caches the user, `clear()` deletes only the session keys (`accessToken`, `refreshToken`, `cachedUser`); other secure keys survive sign-out.
 - On launch, `AuthService.restoreSession()`:
   - no access token → signed out;
   - `AuthRepository.fetchCurrentUser()` → `Ok(user)` → signed in; `Error(UnauthorizedException)` (refresh also failed) → everything deleted, signed out;
@@ -272,13 +265,13 @@ New keys must be added to the enum (`LocalStorage` only loads keys on its allow-
 
 The network layer doesn't know about the session: `DioApiClient` only takes an `onSessionExpired` callback, which `main()` wires to `session.clear`.
 
-**The client returns `Result`; repositories map it.** Every `ApiClient` call returns `Ok(response)` or `Error(AppException)`, already mapped with the HTTP `statusCode` and the server's message. A repository usually just parses the body with `map`, and handles an endpoint-specific error by matching on it before falling back to the default:
+**The client returns `Result<T>`; repositories map it.** Every `ApiClient` call returns `Ok(body)` or `Error(AppException)`, already mapped with the HTTP `statusCode` and the server's message. No Dio types reach repositories. `T` is the raw JSON shape: `Map<String, Object?>` for an object, `List<Object?>` for an array (map the items yourself), `void` when the body doesn't matter. A body that isn't a `T` (e.g. empty where an object was expected) becomes a `ParseException`. A repository usually just parses the body with `map`, and handles an endpoint-specific error by matching on it before falling back to the default:
 
 ```dart
 // Default handling: one line.
 Future<Result<User>> fetchCurrentUser() async {
   final result = await _api.get<Map<String, Object?>>(Endpoints.me);
-  return result.map((response) => User.fromJson(response.data!));
+  return result.map(User.fromJson);
 }
 
 // Endpoint-specific handling: match the error first.
@@ -290,7 +283,7 @@ Future<Result<SignInResult>> signIn({required String email, required String pass
   return switch (result) {
     Error(error: AppException(statusCode: 401)) =>
       const Result.error(AppException('Invalid email or password.', statusCode: 401)),
-    _ => result.map((response) => SignInResult.fromJson(response.data!)),
+    _ => result.map(SignInResult.fromJson),
   };
 }
 ```
@@ -328,7 +321,7 @@ switch (await _authService.signIn(email: email, password: password)) {
 - Retried uploads re-send a clone of the `FormData` (a sent `FormData` can't be reused).
 - Only a request that carried a token triggers a refresh. A 401 without one (e.g. wrong password on login) is a `ServerException` with `statusCode` 401, not a sign-out.
 
-**Logging.** `LoggingInterceptor` passes every request, response and error to `AppLogger` (`lib/core/utils/app_logger.dart`), which prints boxed blocks (method, URL, query, headers, body / status, data / error type) with `debugPrint`. It only logs in debug builds (`kDebugMode`), and the interceptor is only added outside prod. Bodies are never truncated: long lines are split into 800-character chunks so Android's logcat doesn't cut them off. `Authorization`, `Cookie` and `Set-Cookie` show as `***HIDDEN***`; comment them out of `_sensitiveHeaders` locally if you need to see them. 
+**Logging.** `LoggingInterceptor` passes every request, response and error to `AppLogger` (`lib/core/utils/app_logger.dart`), which prints boxed blocks (method, URL, query, headers, body / status, data / error type) with `debugPrint`. The interceptor is always installed; the gate is in `AppLogger`, which only prints in debug builds (`kDebugMode`), for every flavor. Bodies are never truncated: long lines are split into 800-character chunks so Android's logcat doesn't cut them off. `Authorization`, `Cookie` and `Set-Cookie` show as `***HIDDEN***`; comment them out of `_sensitiveHeaders` locally if you need to see them. 
 
 **App logs.** Use `AppLogger.log('...')` for any other logging instead of `print`/`debugPrint`: same boxed format, debug builds only, long lines chunked.
 
