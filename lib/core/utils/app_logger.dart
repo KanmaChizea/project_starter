@@ -1,8 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
-class NetworkLogger {
-  NetworkLogger._();
+class AppLogger {
+  AppLogger._();
 
   static const _top =
       '╔═══════════════════════════════════════════════════════════════';

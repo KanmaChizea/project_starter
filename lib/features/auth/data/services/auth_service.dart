@@ -1,6 +1,7 @@
 import 'package:project_starter/core/network/network_exception.dart';
 import 'package:project_starter/core/session/session_cubit.dart';
 import 'package:project_starter/core/session/user.dart';
+import 'package:project_starter/core/utils/app_logger.dart';
 import 'package:project_starter/core/utils/result.dart';
 
 import '../repositories/auth_repository.dart';
@@ -13,22 +14,39 @@ class AuthService {
 
   Future<void> restoreSession() async {
     if (_session.isResolved) return;
-    if (await _session.readAccessToken() == null) {
-      return _session.clear();
-    }
 
-    switch (await _repository.fetchCurrentUser()) {
-      case Ok(:final value):
-        await _session.start(value);
-      case Error(error: UnauthorizedException()):
+    try {
+      final accessToken = await _session.readAccessToken();
+
+      if (accessToken == null) {
         await _session.clear();
-      case Error():
-        final cached = await _session.readCachedUser();
-        if (cached != null) {
-          await _session.start(cached);
-        } else {
-          await _session.clear(forgetToken: false);
-        }
+        return;
+      }
+
+      final result = await _repository.fetchCurrentUser();
+
+      switch (result) {
+        case Ok(:final value):
+          await _session.start(value);
+
+        case Error(error: UnauthorizedException()):
+          await _session.clear();
+
+        case Error():
+          final cachedUser = await _session.readCachedUser();
+
+          if (cachedUser != null) {
+            await _session.start(cachedUser);
+          } else {
+            await _session.clear(forgetToken: false);
+          }
+      }
+    } catch (error, stackTrace) {
+      AppLogger.log('restoreSession failed: $error\n$stackTrace');
+    } finally {
+      if (!_session.isResolved) {
+        await _session.clear(forgetToken: false);
+      }
     }
   }
 
@@ -46,9 +64,8 @@ class AuthService {
     }
   }
 
-  Future<Result<void>> signOut() async {
-    final result = await _repository.signOut();
-    await _session.clear();
-    return result;
+  void signOut() {
+    _repository.signOut();
+    _session.clear();
   }
 }

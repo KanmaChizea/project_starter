@@ -14,19 +14,17 @@ class AppProvider extends StatelessWidget {
   const AppProvider({
     super.key,
     required this.session,
-    required this.localStorage,
     required this.apiClient,
+    required this.localStorage,
     required this.child,
   });
 
   final SessionCubit session;
-  final LocalStorage localStorage;
   final ApiClient apiClient;
+  final LocalStorage localStorage;
   final Widget child;
 
-  static Future<void> clearAll(BuildContext context) async {
-    await context.read<SessionCubit>().clear();
-  }
+  static Future<void> clearAll(BuildContext context) async {}
 
   @override
   Widget build(BuildContext context) {
@@ -38,9 +36,11 @@ class AppProvider extends StatelessWidget {
           RepositoryProvider(
             create: (_) => AuthService(AuthRepository(apiClient), session),
           ),
-          RepositoryProvider(create: (_) => HomeService(HomeRepository())),
           RepositoryProvider(
-            create: (_) => ProfileService(ProfileRepository(), session),
+            create: (_) => HomeService(HomeRepository(apiClient)),
+          ),
+          RepositoryProvider(
+            create: (_) => ProfileService(ProfileRepository(apiClient)),
           ),
         ],
         child: child,

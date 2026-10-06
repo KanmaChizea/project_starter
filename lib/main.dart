@@ -6,15 +6,12 @@ import 'package:project_starter/core/network/dio_api_client.dart';
 import 'package:project_starter/core/router/app_router.dart';
 import 'package:project_starter/core/session/session_cubit.dart';
 import 'package:project_starter/core/storage/local_storage.dart';
-import 'package:project_starter/core/storage/secure_storage.dart';
 import 'package:project_starter/provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EnvConfig.init(Flavor.current);
-
   final localStorage = await LocalStorage.create();
-  await SecureStorage().clearOnFirstLaunch(localStorage);
 
   final session = SessionCubit();
   final apiClient = DioApiClient(onSessionExpired: session.clear);
@@ -22,8 +19,8 @@ Future<void> main() async {
   runApp(
     AppProvider(
       session: session,
-      localStorage: localStorage,
       apiClient: apiClient,
+      localStorage: localStorage,
       child: App(router: createAppRouter(session)),
     ),
   );

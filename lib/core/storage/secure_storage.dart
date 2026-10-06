@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import 'local_storage.dart';
+import '../utils/app_logger.dart';
 
 enum SecureStorageKey { accessToken, refreshToken, cachedUser }
 
@@ -37,7 +37,11 @@ class SecureStorage {
   }
 
   Future<void> write(SecureStorageKey key, String value) async {
-    await _storage.write(key: key.name, value: value);
+    try {
+      await _storage.write(key: key.name, value: value);
+    } on PlatformException catch (error) {
+      AppLogger.log('SecureStorage write ${key.name} failed: $error');
+    }
     _cache[key] = value;
   }
 
@@ -58,15 +62,5 @@ class SecureStorage {
     for (final key in SecureStorageKey.values) {
       await delete(key);
     }
-  }
-
-  /// iOS keeps Keychain items after uninstall but deletes preferences, so a
-  /// missing launch flag means a fresh install: drop any leftover secrets.
-  Future<void> clearOnFirstLaunch(LocalStorage localStorage) async {
-    if (localStorage.getBool(LocalStorageKey.hasLaunchedBefore) ?? false) {
-      return;
-    }
-    await clear();
-    await localStorage.setBool(LocalStorageKey.hasLaunchedBefore, true);
   }
 }

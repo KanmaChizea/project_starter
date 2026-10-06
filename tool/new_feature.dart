@@ -29,7 +29,7 @@ void main(List<String> argv) {
   final isNewFeature = !Directory(lib).existsSync();
 
   final files = {
-    '$lib/data/repositories/${f.snake}_repository.dart': _repository(f),
+    '$lib/data/repositories/${f.snake}_repository.dart': _repository(package, f),
     '$lib/data/services/${f.snake}_service.dart': _service(f),
     '$lib/ui/models/${s.snake}_ui_state.dart': _uiState(s),
     '$lib/ui/views/${s.snake}_view_model.dart': _viewModel(f, s),
@@ -59,7 +59,9 @@ Next: register the service in lib/provider.dart (AppProvider → MultiRepository
   import 'package:$package/features/$feature/data/repositories/${f.snake}_repository.dart';
   import 'package:$package/features/$feature/data/services/${f.snake}_service.dart';
 
-  RepositoryProvider(create: (_) => ${f.pascal}Service(${f.pascal}Repository())),''');
+  RepositoryProvider(
+    create: (_) => ${f.pascal}Service(${f.pascal}Repository(apiClient)),
+  ),''');
   }
 
   stdout.writeln('''
@@ -74,9 +76,16 @@ Then make ${s.pascal}View reachable (README → Navigation → Adding a route):
 // Templates
 // ---------------------------------------------------------------------------
 
-String _repository(_Names f) => '''
+String _repository(String package, _Names f) => '''
+import 'package:$package/core/network/api_client.dart';
+
 class ${f.pascal}Repository {
-  // TODO: add data access methods.
+  ${f.pascal}Repository(this._api);
+
+  // ignore: unused_field
+  final ApiClient _api;
+
+  // TODO: add data access methods returning Result (README → Networking).
 }
 ''';
 

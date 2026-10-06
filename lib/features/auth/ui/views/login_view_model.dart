@@ -26,8 +26,9 @@ class LoginViewModel extends Cubit<LoginUiState> {
     if (isClosed) return;
 
     switch (result) {
-      case Ok(:final value):
-        emit(state.copyWith(isSubmitting: false, user: () => value));
+      case Ok():
+        // The router leaves the login screen once the session starts.
+        emit(state.copyWith(isSubmitting: false));
       case Error(:final error):
         emit(
           state.copyWith(

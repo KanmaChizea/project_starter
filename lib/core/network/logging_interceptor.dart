@@ -1,11 +1,11 @@
 import 'package:dio/dio.dart';
 
-import 'network_logger.dart';
+import '../utils/app_logger.dart';
 
 class LoggingInterceptor extends Interceptor {
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    NetworkLogger.logRequest(options);
+    AppLogger.logRequest(options);
     handler.next(options);
   }
 
@@ -14,13 +14,13 @@ class LoggingInterceptor extends Interceptor {
     Response<dynamic> response,
     ResponseInterceptorHandler handler,
   ) {
-    NetworkLogger.logResponse(response);
+    AppLogger.logResponse(response);
     handler.next(response);
   }
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
-    NetworkLogger.logError(err);
+    AppLogger.logError(err);
     handler.next(err);
   }
 }

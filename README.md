@@ -124,8 +124,7 @@ lib/
       network_exception.dart      # AppException subclasses: Network / Unauthorized / Server
       auth_interceptor.dart       # Bearer token, 401 → refresh → retry
       auth_tokens.dart            # Access + refresh token pair
-      logging_interceptor.dart    # Hooks NetworkLogger into Dio
-      network_logger.dart         # NetworkLogger: boxed request/response/error logs via debugPrint
+      logging_interceptor.dart    # Hooks AppLogger into Dio
     session/
       session_cubit.dart          # Who is signed in (Cubit<SessionState>); cached user, saves tokens on sign-in
       session_state.dart          # unknown / authenticated / unauthenticated + user
@@ -137,6 +136,7 @@ lib/
       result.dart                 # Result<T>: Ok / Error(AppException) + map / fold
       app_exception.dart          # AppException(message, statusCode) + Parse / Unknown
       async_value.dart            # AsyncValue<T>: loading / data / error for UI state
+      app_logger.dart             # AppLogger: boxed debug logs (log, logRequest/Response/Error)
   features/
     auth/
       data/
@@ -168,9 +168,9 @@ widgets  ui model    core/session
 
 - `ui/` may import from `data/`; `data/` never imports from `ui/`.
 - Parsing and endpoint-specific error handling happen in repositories: they `map` API/storage responses into typed models (entities, or result types like `SignInResult` in `data/models/`), special-case errors where an endpoint needs it, and return a `Result`. If the backend's shape differs from an entity, parse into a response model in `data/models/` and convert it inside the repository. Services and view models never see raw JSON.
-- Views talk only to their view model. View models depend on services, never on repositories.
+- Views talk to their view model for screen state and actions, and may read app-wide state (`SessionCubit`) directly. View models depend on services, never on repositories.
 - Exception: a view with no UI state that only triggers a one-off call may call its feature's service directly instead of having a view model (e.g. `SplashView` → `AuthService.restoreSession()`).
-- Features never import other features. Anything several features need lives in `core/` (e.g. `core/session`, `core/router`).
+- Features never import other features, with one exception: any feature may use `AuthService` (auth underpins the whole app, e.g. Profile signs out through it). Anything else several features need lives in `core/` (e.g. `core/session`, `core/router`).
 - `core/` doesn't import from `features/`, with one exception: the route tables in `core/router/` (`auth_router.dart`, `shell_router.dart`) import feature views to register them.
 - Widgets get state and callbacks via constructors; they don't talk to view models.
 - One-off effects (navigation, snackbars) go in a `BlocListener` in the view, not in `build`.
@@ -210,7 +210,7 @@ widgets  ui model    core/session
   Works inside tabs, from dialogs and with pushed routes, and keeps go_router's location in sync (unlike `Navigator.popUntil`). Does nothing if the target is not in the stack (asserts in debug). If a route on the way has an `onExit` (e.g. an "unsaved changes?" dialog), it stops there; call it again after the user confirms.
 - **Tabs** use `StatefulShellRoute.indexedStack`: each tab keeps its own stack and state. Tapping the active tab pops it back to its root.
 - **Splash and session restore**: the session starts as `unknown`. Until it is resolved, every location redirects to `/splash` (keeping the original in `?from=`). `SplashView` calls `AuthService.restoreSession()`, which reads the stored access token and asks the repository for its user (see **Session and storage**). Once resolved, the splash redirects to `from` / `/home` if signed in, otherwise to `/login` (still carrying `from`).
-- **Auth redirect**: the router refreshes on every `SessionCubit` change (via `StreamListenable`). Signed out, any non-public route goes to `/login?from=<where you were going>`; after sign-in the user lands on `from` (only if it is an in-app path), otherwise `/home`. Signing out from anywhere returns to login. Views never navigate after restore/sign-in/sign-out themselves.
+- **Auth redirect**: the router refreshes on every `SessionCubit` change (via `StreamListenable`). Signed out, any non-public route goes to `/login?from=<where you were going>`; after sign-in the user lands on `from` (only if it is an in-app path), otherwise `/home`. Signing out (`AuthService.signOut()`) calls `/auth/logout`, clears the session and returns to login. Views never navigate after restore/sign-in/sign-out themselves.
 - **Argument protection**: path parameters are constrained in the path pattern (`items/:id([1-9]\d*)`), so a malformed deep link such as `/home/items/abc` never matches and shows the 404 page. Builders can then parse safely. Pass IDs, not objects: `extra` is lost on deep links and app restarts.
 - **404**: any unmatched location renders `NotFoundView` with a way back home. `/` redirects to `/home`.
 
@@ -227,7 +227,17 @@ View models are Cubits from [`flutter_bloc`](https://pub.dev/packages/flutter_bl
 - UI state classes are immutable, extend `Equatable`, and expose `copyWith`. View models change state only with `emit(state.copyWith(...))`.
 - A view creates its own view model with `BlocProvider(create: ...)`, so the view model lives exactly as long as the route.
 - App-wide state and services are registered in `AppProvider` (`lib/provider.dart`): Cubits with `BlocProvider`, plain services with `RepositoryProvider`. Services that need the session take it in their constructor.
-- `AppProvider.clearAll(context)` resets app-wide state (currently the session). When a service starts holding state (caches, sockets), give it a `reset()` and call it there.
+- **Sign-out** belongs to auth: `AuthService.signOut()` calls `/auth/logout` and clears the session even if that request fails. After it, reset app-wide state with `AppProvider.clearAll`. The Profile view does both:
+
+  ```dart
+  final authService = context.read<AuthService>();
+  final clearAll = AppProvider.clearAll(context);   // read before the await
+  await authService.signOut();
+  clearAll();
+  ```
+
+- **`AppProvider.clearAll(context)`** (`lib/provider.dart`) only resets app-wide state. It reads services immediately and returns the reset as a callback, because the calling screen is gone once the session clears. When a service starts holding state (caches, sockets), give it a `reset()`, read it in `clearAll` and call `reset()` in the returned callback.
+- **App-wide state in screens**: views read app-wide state such as the signed-in user straight from `SessionCubit` with `context.select((SessionCubit s) => s.state.user)` (see `ProfileView`). `select` rebuilds only when that value changes. View models hold screen-specific state and actions; they don't copy session data into their UI state, and feature services don't re-expose it. Put it in the view model only when the screen derives something from it together with its own data, or edits a copy of it.
 - Views rebuild with `BlocBuilder` / `BlocSelector` and run side effects with `BlocListener`.
 - View models are tested with `bloc_test` (`blocTest`), views with widget tests that provide fakes through `RepositoryProvider`.
 
@@ -239,9 +249,9 @@ Two stores in `lib/core/storage/`, both with typed key enums:
 |---|---|---|
 | Backed by | [`flutter_secure_storage`](https://pub.dev/packages/flutter_secure_storage) (Keychain / Keystore) | [`shared_preferences`](https://pub.dev/packages/shared_preferences) (`SharedPreferencesWithCache`) |
 | For | Secrets and personal data | Non-sensitive settings and flags |
-| Keys | `SecureStorageKey`: `accessToken`, `refreshToken`, `cachedUser` | `LocalStorageKey`: `hasLaunchedBefore` |
+| Keys | `SecureStorageKey`: `accessToken`, `refreshToken`, `cachedUser` | `LocalStorageKey`: `themeMode` |
 | Reads | async | sync (cache loaded at startup) |
-| Available via | `SecureStorage()` (singleton) | `context.read<LocalStorage>()` (provided by `AppProvider`) |
+| Available via | `SecureStorage()` (singleton) | `context.read<LocalStorage>()` (created in `main()`, provided by `AppProvider`) |
 
 New keys must be added to the enum (`LocalStorage` only loads keys on its allow-list). Secure values that can't be decrypted are deleted and read as `null`.
 
@@ -251,7 +261,8 @@ New keys must be added to the enum (`LocalStorage` only loads keys on its allow-
   - no access token → signed out;
   - `AuthRepository.fetchCurrentUser()` → `Ok(user)` → signed in; `Error(UnauthorizedException)` (refresh also failed) → everything deleted, signed out;
   - any other error (e.g. offline) → signed in as the **cached user**; with no usable cache, shown as signed out but the tokens are kept so the next launch retries.
-- **First launch**: `main()` calls `SecureStorage.clearOnFirstLaunch(localStorage)` before `runApp`. iOS deletes preferences on uninstall but keeps Keychain items, so a missing `hasLaunchedBefore` flag means a fresh install and leftover secrets are wiped; a reinstall starts signed out. (If you add this to an app that is already released, existing users are signed out once on update, since they don't have the flag yet.)
+  - anything unexpected (e.g. a storage failure) is logged and the session still resolves as signed out (tokens kept), so the splash can never get stuck.
+- **Fresh install** (iOS, native): Keychain items survive uninstall but `UserDefaults` don't, so `AppDelegate.clearKeychainOnFreshInstall()` (`ios/Runner/AppDelegate.swift`) checks a `hasLaunchedBefore` flag in `UserDefaults` at launch, before Flutter starts, and wipes the app's Keychain items if it's missing. A reinstall therefore starts signed out. Android needs nothing: uninstalling removes the app's data and Keystore keys, and backups are off. (Adding this to an app that is already released signs existing iOS users out once on update, since they don't have the flag yet.)
 - iOS: Keychain items use `KeychainAccessibility.first_unlock`, so they stay readable for background work after the first unlock.
 - Android: `android:allowBackup="false"` in `AndroidManifest.xml`. Auto Backup would restore encrypted values onto a device without the key, which can't decrypt them.
 
@@ -284,7 +295,7 @@ Future<Result<SignInResult>> signIn({required String email, required String pass
 }
 ```
 
-- `result.map(transform)` converts the value; if `transform` throws (the body doesn't match the model) the result is a `ParseException`, so a bad response never crashes.
+- `result.map(transform)` converts the value; if `transform` throws (the body doesn't match the model) the result is a `ParseException`, so a bad response never crashes. In debug builds the original error and stack trace are printed, so you can see which field didn't match.
 - `result.fold(onError, onOk)` is there when you want `Either`-style branching.
 
 Services and view models never see Dio; they switch on the `Result`:
@@ -317,7 +328,9 @@ switch (await _authService.signIn(email: email, password: password)) {
 - Retried uploads re-send a clone of the `FormData` (a sent `FormData` can't be reused).
 - Only a request that carried a token triggers a refresh. A 401 without one (e.g. wrong password on login) is a `ServerException` with `statusCode` 401, not a sign-out.
 
-**Logging.** `LoggingInterceptor` passes every request, response and error to `NetworkLogger` (`lib/core/network/network_logger.dart`), which prints boxed blocks (method, URL, query, headers, body / status, data / error type) with `debugPrint`. It only logs in debug builds (`kDebugMode`), and the interceptor is only added outside prod. Bodies are never truncated: long lines are split into 800-character chunks so Android's logcat doesn't cut them off. `Authorization`, `Cookie` and `Set-Cookie` show as `***HIDDEN***`; comment them out of `_sensitiveHeaders` locally if you need to see them. `NetworkLogger.log('...')` is available for ad-hoc messages.
+**Logging.** `LoggingInterceptor` passes every request, response and error to `AppLogger` (`lib/core/utils/app_logger.dart`), which prints boxed blocks (method, URL, query, headers, body / status, data / error type) with `debugPrint`. It only logs in debug builds (`kDebugMode`), and the interceptor is only added outside prod. Bodies are never truncated: long lines are split into 800-character chunks so Android's logcat doesn't cut them off. `Authorization`, `Cookie` and `Set-Cookie` show as `***HIDDEN***`; comment them out of `_sensitiveHeaders` locally if you need to see them. 
+
+**App logs.** Use `AppLogger.log('...')` for any other logging instead of `print`/`debugPrint`: same boxed format, debug builds only, long lines chunked.
 
 **Adapting to your backend** (marked with `TODO`):
 
@@ -355,6 +368,6 @@ lib/features/user_profile/
   ui/views/edit_profile_view_model.dart
 ```
 
-For a new feature it prints the line to register its service in `lib/provider.dart`. Add `data/models/` and `ui/widgets/` when the feature needs them, and put its tests under `test/features/<feature>/`, mirroring `lib/`.
+The generated repository takes the `ApiClient`. For a new feature the script prints the line to register its service in `lib/provider.dart` (`XService(XRepository(apiClient))`). Add `data/models/` and `ui/widgets/` when the feature needs them, and put its tests under `test/features/<feature>/`, mirroring `lib/`.
 
 In VS Code: **Tasks: Run Task → New feature / screen**.

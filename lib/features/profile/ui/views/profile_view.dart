@@ -1,5 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:project_starter/core/session/session_cubit.dart';
+import 'package:project_starter/features/auth/data/services/auth_service.dart';
+import 'package:project_starter/provider.dart';
 
 import '../../data/services/profile_service.dart';
 import '../models/profile_ui_state.dart';
@@ -23,6 +28,8 @@ class _ProfileBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final user = context.select((SessionCubit session) => session.state.user);
+
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
       body: BlocBuilder<ProfileViewModel, ProfileUiState>(
@@ -34,19 +41,25 @@ class _ProfileBody extends StatelessWidget {
             children: [
               ListTile(
                 leading: const Icon(Icons.person),
-                title: Text(state.user?.displayName ?? 'Signed in as'),
-                subtitle: Text(state.user?.email ?? ''),
+                title: Text(user?.displayName ?? 'Signed in as'),
+                subtitle: Text(user?.email ?? ''),
               ),
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.logout),
                 title: const Text('Sign out'),
-                onTap: context.read<ProfileViewModel>().signOut,
+                onTap: () => _signOut(context),
               ),
             ],
           );
         },
       ),
     );
+  }
+
+  void _signOut(BuildContext context) {
+    final authService = context.read<AuthService>();
+    authService.signOut();
+    unawaited(AppProvider.clearAll(context));
   }
 }

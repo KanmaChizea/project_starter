@@ -1,6 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum LocalStorageKey { hasLaunchedBefore }
+enum LocalStorageKey { themeMode }
 
 class LocalStorage {
   LocalStorage._(this._prefs);

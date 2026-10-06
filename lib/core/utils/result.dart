@@ -1,4 +1,5 @@
 import 'app_exception.dart';
+import 'app_logger.dart';
 
 sealed class Result<T> {
   const Result();
@@ -39,7 +40,8 @@ extension ResultX<T> on Result<T> {
       case Ok(:final value):
         try {
           return Result.ok(transform(value));
-        } on Object {
+        } catch (error, stackTrace) {
+          AppLogger.log('ParseException: $error\n$stackTrace');
           return const Result.error(ParseException());
         }
       case Error(:final error):
