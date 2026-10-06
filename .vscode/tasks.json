@@ -50,6 +50,14 @@
       "type": "shell",
       "command": "flutter clean && flutter pub get",
       "problemMatcher": []
+    },
+    {
+      "label": "Rename app",
+      "detail": "dart run tool/rename.dart (leave a field blank to keep it)",
+      "type": "shell",
+      "command": "dart",
+      "args": ["run", "tool/rename.dart", "--name=${input:appName}", "--id=${input:appId}", "--package=${input:dartPackage}"],
+      "problemMatcher": []
     }
   ],
   "inputs": [
@@ -66,6 +74,21 @@
       "description": "Build mode",
       "options": ["release", "profile", "debug"],
       "default": "release"
+    },
+    {
+      "id": "appName",
+      "type": "promptString",
+      "description": "App display name (flavor suffixes added automatically). Blank = keep."
+    },
+    {
+      "id": "appId",
+      "type": "promptString",
+      "description": "Application/bundle ID, e.g. com.acme.myapp. Blank = keep."
+    },
+    {
+      "id": "dartPackage",
+      "type": "promptString",
+      "description": "Dart package name, e.g. my_app. Blank = keep."
     }
   ]
 }

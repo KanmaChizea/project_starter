@@ -43,7 +43,7 @@ android {
         }
         create("prod") {
             dimension = "environment"
-            resValue("string", "app_name", "Project Starter Prod")
+            resValue("string", "app_name", "Project Starter")
         }
     }
 
