@@ -132,6 +132,10 @@ lib/
     storage/
       secure_storage.dart         # SecureStorage: Keychain / Keystore wrapper (tokens, cached user)
       local_storage.dart          # LocalStorage: shared_preferences wrapper for non-sensitive values
+    theme/
+      app_colors.dart             # AppColors: ThemeExtension with background, primary, text (light & dark)
+      app_theme.dart              # AppTheme: ThemeData for light and dark modes
+      theme_cubit.dart            # ThemeCubit: manages & persists ThemeMode (system, light, dark)
     utils/
       result.dart                 # Result<T>: Ok / Error(AppException) + map / fold
       app_exception.dart          # AppException(message, statusCode) + Parse / Unknown
@@ -233,6 +237,16 @@ View models are Cubits from [`flutter_bloc`](https://pub.dev/packages/flutter_bl
 - **App-wide state in screens**: views read app-wide state such as the signed-in user straight from `SessionCubit` with `context.select((SessionCubit s) => s.state.user)` (see `ProfileView`). `select` rebuilds only when that value changes. View models hold screen-specific state and actions; they don't copy session data into their UI state, and feature services don't re-expose it. Put it in the view model only when the screen derives something from it together with its own data, or edits a copy of it.
 - Views rebuild with `BlocBuilder` / `BlocSelector` and run side effects with `BlocListener`.
 - View models are tested with `bloc_test` (`blocTest`), views with widget tests that provide fakes through `RepositoryProvider`.
+
+### Theming
+
+Theme configuration lives in `lib/core/theme/`:
+
+- `AppColors` (`lib/core/theme/app_colors.dart`): `ThemeExtension<AppColors>` defining the template color tokens (`background`, `primary`, `text`) for both light and dark modes.
+- `AppTheme` (`lib/core/theme/app_theme.dart`): Builds `ThemeData` for `light` and `dark` modes, configuring Material 3, `scaffoldBackgroundColor`, `colorScheme`, and theme extensions.
+- `ThemeCubit` (`lib/core/theme/theme_cubit.dart`): `Cubit<ThemeMode>` managing the active theme mode (`ThemeMode.system`, `ThemeMode.light`, `ThemeMode.dark`). Loads the saved mode on startup, persists updates to `LocalStorage` under `LocalStorageKey.themeMode`, and exposes `setTheme(mode)`.
+- Registered in `AppProvider` (`lib/provider.dart`) and wired to `MaterialApp.router` in `lib/main.dart` with `themeMode: context.watch<ThemeCubit>().state` so the app dynamically updates on theme changes.
+- Access colors in widgets via `context.colors` (e.g. `context.colors.primary`) or `AppColors.of(context)`. Change theme via `context.read<ThemeCubit>().setTheme(mode)`.
 
 ### Session and storage
 
