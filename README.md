@@ -134,6 +134,7 @@ lib/
       local_storage.dart          # LocalStorage: shared_preferences wrapper for non-sensitive values
     theme/
       app_colors.dart             # AppColors: ThemeExtension with background, primary, text (light & dark)
+      app_text_styles.dart        # AppTextStyles: GoogleFonts body style + TextStyle.weight extension
       app_theme.dart              # AppTheme: ThemeData for light and dark modes
       theme_cubit.dart            # ThemeCubit: manages & persists ThemeMode (system, light, dark)
     utils/
@@ -243,6 +244,7 @@ View models are Cubits from [`flutter_bloc`](https://pub.dev/packages/flutter_bl
 Theme configuration lives in `lib/core/theme/`:
 
 - `AppColors` (`lib/core/theme/app_colors.dart`): `ThemeExtension<AppColors>` defining the template color tokens (`background`, `primary`, `text`) for both light and dark modes.
+- `AppTextStyles` (`lib/core/theme/app_text_styles.dart`): Base typography powered by `google_fonts` (`GoogleFonts.inter`). Exposes a single `body` text style for the template, alongside a `weight(FontWeight)` extension on `TextStyle` to rebuild styles with different font weights (e.g. `AppTextStyles.body.weight(FontWeight.bold)`).
 - `AppTheme` (`lib/core/theme/app_theme.dart`): Builds `ThemeData` for `light` and `dark` modes, configuring Material 3, `scaffoldBackgroundColor`, `colorScheme`, and theme extensions.
 - `ThemeCubit` (`lib/core/theme/theme_cubit.dart`): `Cubit<ThemeMode>` managing the active theme mode (`ThemeMode.system`, `ThemeMode.light`, `ThemeMode.dark`). Loads the saved mode on startup, persists updates to `LocalStorage` under `LocalStorageKey.themeMode`, and exposes `setTheme(mode)`.
 - Registered in `AppProvider` (`lib/provider.dart`) and wired to `MaterialApp.router` in `lib/main.dart` with `themeMode: context.watch<ThemeCubit>().state` so the app dynamically updates on theme changes.
