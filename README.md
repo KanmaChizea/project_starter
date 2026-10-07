@@ -119,6 +119,10 @@ lib/
       not_found_view.dart
       stream_listenable.dart      # Adapts a Cubit stream to GoRouter.refreshListenable
       navigation.dart             # popUntil / popUntilNamed for go_router
+    pagination/
+      paginated_data.dart         # PaginatedData<T>: one page of items + hasMore (returned by repositories)
+      paginated_state.dart        # PaginatedState<T>: items, nextPage, hasMore, isLoading, errorMessage
+      paginated_view_model.dart   # PaginatedViewModel<T>: base Cubit with loadNextPage / refresh
     network/
       api_client.dart             # ApiClient interface: every call returns Result<T> (the response body)
       dio_api_client.dart         # DioApiClient: the Dio implementation
@@ -146,6 +150,7 @@ lib/
       controls/                   # Toggles, checkboxes, switches, sliders
       icons/                      # SvgIcon
       inputs/                     # Text fields, selectors, form inputs
+      lists/                      # PaginatedListView, PaginatedSliverList
       modals/                     # Dialogs, bottom sheets, alerts
       text/                       # AppText, AppRichText + AppTextSpan
       widget.dart                 # Root barrel export for core widgets
@@ -251,6 +256,85 @@ View models are Cubits from [`flutter_bloc`](https://pub.dev/packages/flutter_bl
 - **App-wide state in screens**: views read app-wide state such as the signed-in user straight from `SessionCubit` with `context.select((SessionCubit s) => s.state.user)` (see `ProfileView`). `select` rebuilds only when that value changes. View models hold screen-specific state and actions; they don't copy session data into their UI state, and feature services don't re-expose it. Put it in the view model only when the screen derives something from it together with its own data, or edits a copy of it.
 - Views rebuild with `BlocBuilder` / `BlocSelector` and run side effects with `BlocListener`.
 - View models are tested with `bloc_test` (`blocTest`), views with widget tests that provide fakes through `RepositoryProvider`.
+
+### Pagination
+
+Reusable infinite-scroll pagination lives in `lib/core/pagination/` and `lib/core/widgets/lists/`:
+
+- **Repository** returns `Result<PaginatedData<T>>`, mapping the API's pagination fields (page meta, cursors, totals) to `hasMore`.
+- **View model** extends `PaginatedViewModel<T>` and implements `fetchPage(int page)`. It provides `loadNextPage()` (ignored while a request is running or when there are no more pages) and `refresh()` (reloads from `firstPage`, which defaults to `1`; current items stay visible until it succeeds, and results from requests it replaced are dropped).
+- **View** renders `PaginatedListView<T>`. It shows a loader for the first page, an error with Retry, `emptyBuilder` when there are no items, and a loading or Retry footer below the items. It calls `onLoadMore` when the footer gets built, i.e. when the end of the list comes within the scroll view's cache extent (about 250px past the screen), and keeps loading while a page doesn't fill the screen. Pass `onRefresh` to enable pull to refresh.
+
+```dart
+// Repository
+Future<Result<PaginatedData<Order>>> getOrders({required int page}) async {
+  final result = await _api.get<Map<String, dynamic>>(
+    Endpoints.orders,
+    query: {'page': page},
+  );
+  return result.map(
+    (json) => PaginatedData(
+      items: (json['data'] as List).map((e) => Order.fromJson(e)).toList(),
+      hasMore: json['meta']['current_page'] < json['meta']['last_page'],
+    ),
+  );
+}
+
+// View model
+class OrdersViewModel extends PaginatedViewModel<Order> {
+  OrdersViewModel({required this._orderService});
+
+  final OrderService _orderService;
+
+  @override
+  Future<Result<PaginatedData<Order>>> fetchPage(int page) =>
+      _orderService.getOrders(page: page);
+}
+
+// View
+BlocProvider(
+  create: (context) =>
+      OrdersViewModel(orderService: context.read<OrderService>())
+        ..loadNextPage(),
+  child: BlocBuilder<OrdersViewModel, PaginatedState<Order>>(
+    builder: (context, state) => PaginatedListView(
+      state: state,
+      itemBuilder: (context, order) => OrderTile(order),
+      onLoadMore: context.read<OrdersViewModel>().loadNextPage,
+      onRefresh: context.read<OrdersViewModel>().refresh,
+    ),
+  ),
+)
+```
+
+**Inside a parent scroll view.** `PaginatedListView` owns its scrolling. When the list scrolls together with other content (a header, a banner, filters), make the parent a `CustomScrollView` and use `PaginatedSliverList<T>`, which takes the same arguments except `onRefresh` and `padding`. Wrap the `CustomScrollView` in a `RefreshIndicator` for pull to refresh, and use `SliverPadding` for padding. Only the items near the screen are built, however long the list gets.
+
+```dart
+RefreshIndicator(
+  onRefresh: viewModel.refresh,
+  child: CustomScrollView(
+    slivers: [
+      const SliverToBoxAdapter(child: OrdersHeader()),
+      PaginatedSliverList(
+        state: state,
+        itemBuilder: (context, order) => OrderTile(order),
+        onLoadMore: viewModel.loadNextPage,
+      ),
+    ],
+  ),
+)
+```
+
+Don't put either widget in a `SingleChildScrollView`, a `Column` inside one, or a `shrinkWrap` list. Those build every item at once, so the footer is always built and every page would load straight away. In a `NestedScrollView`, use `PaginatedListView` as the `body`.
+
+If a screen needs extra state alongside the list, keep the `PaginatedViewModel` for the list and put the rest in a separate view model rather than widening `PaginatedState`.
+
+**App-wide lists.** When a list should be shared across screens and keep its loaded pages between visits (notifications, a feed), register the view model in `AppProvider` instead of creating it in the view:
+
+- Add it with `BlocProvider(create: ...)` in `AppProvider`; views read it with `BlocBuilder` / `context.read` and don't create it.
+- Start loading with `context.read<NotificationsViewModel>().loadIfEmpty()` when a view opens (e.g. in `initState`). It loads the first page only when nothing is loaded yet. Don't call `loadNextPage()` on open: once page 1 has loaded, each visit would fetch another page.
+- Call `reset()` in `AppProvider.clearAll` so the next user doesn't see the previous user's items. It also drops the result of any request still running.
+- When the app changes the data itself (marking a notification read, creating an order), add a method to the subclass that updates the list with `emit(state.copyWith(items: ...))` instead of refetching.
 
 ### Theming
 
