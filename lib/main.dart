@@ -9,10 +9,12 @@ import 'package:project_starter/core/session/session_cubit.dart';
 import 'package:project_starter/core/storage/local_storage.dart';
 import 'package:project_starter/core/theme/app_theme.dart';
 import 'package:project_starter/core/theme/theme_cubit.dart';
+import 'package:project_starter/core/utils/scale_util.dart';
 import 'package:project_starter/provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  ScaleUtil.init();
   await EnvConfig.init(Flavor.current);
   final localStorage = await LocalStorage.create();
 

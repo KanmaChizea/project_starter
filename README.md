@@ -134,21 +134,24 @@ lib/
       local_storage.dart          # LocalStorage: shared_preferences wrapper for non-sensitive values
     theme/
       app_colors.dart             # AppColors: ThemeExtension with background, primary, text (light & dark)
+      app_spacing.dart            # AppSpacing: scaled SizedBox vertical/horizontal & EdgeInsets padding tokens
       app_text_styles.dart        # AppTextStyles: GoogleFonts body style + TextStyle.weight extension
       app_theme.dart              # AppTheme: ThemeData for light and dark modes
       theme_cubit.dart            # ThemeCubit: manages & persists ThemeMode (system, light, dark)
-    widget/
+    widgets/
       buttons/                    # App-wide button components
       containers/                 # App-wide card/container wrappers
       controls/                   # Toggles, checkboxes, switches, sliders
       inputs/                     # Text fields, selectors, form inputs
       modals/                     # Dialogs, bottom sheets, alerts
+      app_text.dart               # AppText: customizable typography widget with theme defaults
       widget.dart                 # Root barrel export for core widgets
     utils/
       result.dart                 # Result<T>: Ok / Error(AppException) + map / fold
       app_exception.dart          # AppException(message, statusCode) + Parse / Unknown
       async_value.dart            # AsyncValue<T>: loading / data / error for UI state
       app_logger.dart             # AppLogger: boxed debug logs (log, logRequest/Response/Error)
+      scale_util.dart             # ScaleUtil: scales sizes from the design frame to the device (w, h, sp)
   features/
     auth/
       data/
@@ -252,6 +255,9 @@ Theme configuration lives in `lib/core/theme/`:
 
 - `AppColors` (`lib/core/theme/app_colors.dart`): `ThemeExtension<AppColors>` defining the template color tokens (`background`, `primary`, `text`) for both light and dark modes.
 - `AppTextStyles` (`lib/core/theme/app_text_styles.dart`): Base typography powered by `google_fonts` (`GoogleFonts.inter`). Exposes a single `body` text style for the template, alongside a `weight(FontWeight)` extension on `TextStyle` to rebuild styles with different font weights (e.g. `AppTextStyles.body.weight(FontWeight.bold)`).
+- `AppSpacing` (`lib/core/theme/app_spacing.dart`): Spacing tokens scaled with `ScaleUtil`: `SizedBox` vertical (`v4`-`v48`, scaled by height) and horizontal (`h4`-`h32`, scaled by width) gaps, plus `EdgeInsets` padding presets and helpers (`symmetricPadding`, `fromLTRB`, `only`) that scale horizontal values by width and vertical values by height. Tokens are getters, not `const`, because they depend on the screen size.
+- `AppText` (`lib/core/widgets/app_text.dart`): Reusable text widget with default theme typography and text color, accepting `style`, `color`, `textAlign`, `maxLines`, and `overflow`.
+- `ScaleUtil` (`lib/core/utils/scale_util.dart`): Scales design sizes to the current screen. Initialized in `main()` with the design frame (default `375 x 812`); pass `designWidth` / `designHeight` to `ScaleUtil.init` if your designs use a different frame. Use `ScaleUtil.w(...)` for widths, icons and horizontal padding, `ScaleUtil.h(...)` for heights and vertical spacing, and `ScaleUtil.sp(...)` for font sizes (dampened so text scales less than layout). Factors are computed once at startup and don't update on rotation or window resize. Also exposes `num` extensions (`16.w`, `16.h`, `14.sp`, `8.r`, where `r` scales by width), which `AppSpacing` uses.
 - `AppTheme` (`lib/core/theme/app_theme.dart`): Builds `ThemeData` for `light` and `dark` modes, configuring Material 3, `scaffoldBackgroundColor`, `colorScheme`, and theme extensions.
 - `ThemeCubit` (`lib/core/theme/theme_cubit.dart`): `Cubit<ThemeMode>` managing the active theme mode (`ThemeMode.system`, `ThemeMode.light`, `ThemeMode.dark`). Loads the saved mode on startup, persists updates to `LocalStorage` under `LocalStorageKey.themeMode`, and exposes `setTheme(mode)`.
 - Registered in `AppProvider` (`lib/provider.dart`) and wired to `MaterialApp.router` in `lib/main.dart` with `themeMode: context.watch<ThemeCubit>().state` so the app dynamically updates on theme changes.
