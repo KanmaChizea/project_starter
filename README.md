@@ -123,6 +123,9 @@ lib/
       paginated_data.dart         # PaginatedData<T>: one page of items + hasMore (returned by repositories)
       paginated_state.dart        # PaginatedState<T>: items, nextPage, hasMore, isLoading, errorMessage
       paginated_view_model.dart   # PaginatedViewModel<T>: base Cubit with loadNextPage / refresh
+    extensions/
+      string_extensions.dart      # toTitleCase, toSentenceCase, pluralSafe / plural, String?.isNullOrEmpty
+      list_extensions.dart        # firstWhereOrNull, List?.isNullOrEmpty
     network/
       api_client.dart             # ApiClient interface: every call returns Result<T> (the response body)
       dio_api_client.dart         # DioApiClient: the Dio implementation
