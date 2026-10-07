@@ -137,6 +137,13 @@ lib/
       app_text_styles.dart        # AppTextStyles: GoogleFonts body style + TextStyle.weight extension
       app_theme.dart              # AppTheme: ThemeData for light and dark modes
       theme_cubit.dart            # ThemeCubit: manages & persists ThemeMode (system, light, dark)
+    widget/
+      buttons/                    # App-wide button components
+      containers/                 # App-wide card/container wrappers
+      controls/                   # Toggles, checkboxes, switches, sliders
+      inputs/                     # Text fields, selectors, form inputs
+      modals/                     # Dialogs, bottom sheets, alerts
+      widget.dart                 # Root barrel export for core widgets
     utils/
       result.dart                 # Result<T>: Ok / Error(AppException) + map / fold
       app_exception.dart          # AppException(message, statusCode) + Parse / Unknown
