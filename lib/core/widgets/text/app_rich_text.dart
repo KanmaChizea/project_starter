@@ -35,7 +35,6 @@ class AppRichText extends StatefulWidget {
 }
 
 class _AppRichTextState extends State<AppRichText> {
-  // TextSpan doesn't own its recognizer, so they're kept here to be disposed.
   List<TapGestureRecognizer?> _recognizers = [];
 
   @override
