@@ -108,6 +108,7 @@ lib/
       env_config.dart             # EnvConfig: per-flavor values from env/.env.<flavor>
     constants/
       endpoints.dart              # Endpoints: API paths
+      app_layout.dart             # AppLayout: tablet breakpoint and max widths for content, catalog, nav bar, auth forms
       app_svgs.dart               # AppSvgs: SVG asset paths (assets/svgs/)
       app_images.dart             # AppImages: image asset paths (assets/images/)
     router/
@@ -115,7 +116,7 @@ lib/
       app_router.dart             # GoRouter: combines route groups, 404, root redirect
       auth_router.dart            # Auth routes (login, …) + auth redirect
       shell_router.dart           # Tab shell (StatefulShellRoute) and its branches
-      app_shell.dart              # Bottom navigation bar for the tab branches
+      app_shell.dart              # Bottom navigation bar for the tab branches (capped at AppLayout.maxNavBarWidth)
       not_found_view.dart
       stream_listenable.dart      # Adapts a Cubit stream to GoRouter.refreshListenable
       navigation.dart             # popUntil / popUntilNamed for go_router
@@ -150,6 +151,7 @@ lib/
     widgets/
       buttons/                    # App-wide button components
       containers/                 # App-wide card/container wrappers
+        content_width.dart        # ContentWidth: centres a child and caps its width on tablets
       controls/                   # Toggles, checkboxes, switches, sliders
       icons/                      # SvgIcon
       inputs/                     # Text fields, selectors, form inputs
@@ -162,7 +164,7 @@ lib/
       app_exception.dart          # AppException(message, statusCode) + Parse / Unknown
       async_value.dart            # AsyncValue<T>: loading / data / error for UI state
       app_logger.dart             # AppLogger: boxed debug logs (log, logRequest/Response/Error)
-      scale_util.dart             # ScaleUtil: scales sizes from the design frame to the device (w, h, sp)
+      scale_util.dart             # ScaleUtil: scales sizes from the design frame to the device (w, h, sp), capped for tablets
   features/
     auth/
       data/
@@ -347,7 +349,9 @@ Theme configuration lives in `lib/core/theme/`:
 - `AppTextStyles` (`lib/core/theme/app_text_styles.dart`): Base typography powered by `google_fonts` (`GoogleFonts.inter`). Exposes a single `body` text style for the template, alongside a `weight(FontWeight)` extension on `TextStyle` to rebuild styles with different font weights (e.g. `AppTextStyles.body.weight(FontWeight.bold)`).
 - `AppSpacing` (`lib/core/theme/app_spacing.dart`): Spacing tokens scaled with `ScaleUtil`: `SizedBox` vertical (`v4`-`v48`, scaled by height) and horizontal (`h4`-`h32`, scaled by width) gaps, plus `EdgeInsets` padding presets and helpers (`symmetricPadding`, `fromLTRB`, `only`) that scale horizontal values by width and vertical values by height. Tokens are getters, not `const`, because they depend on the screen size.
 - `AppText` (`lib/core/widgets/text/app_text.dart`): Reusable text widget with default theme typography and text color, accepting `style`, `color`, `textAlign`, `maxLines`, and `overflow`.
-- `ScaleUtil` (`lib/core/utils/scale_util.dart`): Scales design sizes to the current screen. Initialized in `main()` with the design frame (default `375 x 812`); pass `designWidth` / `designHeight` to `ScaleUtil.init` if your designs use a different frame. Use `ScaleUtil.w(...)` for widths, icons and horizontal padding, `ScaleUtil.h(...)` for heights and vertical spacing, and `ScaleUtil.sp(...)` for font sizes (dampened so text scales less than layout). Factors are computed once at startup and don't update on rotation or window resize. Also exposes `num` extensions (`16.w`, `16.h`, `14.sp`, `8.r`, where `r` scales by width), which `AppSpacing` uses.
+- `ScaleUtil` (`lib/core/utils/scale_util.dart`): Scales design sizes to the current screen. Initialized in `main()` with the design frame (default `375 x 812`); pass `designWidth` / `designHeight` to `ScaleUtil.init` if your designs use a different frame. Use `ScaleUtil.w(...)` for widths, icons and horizontal padding, `ScaleUtil.h(...)` for heights and vertical spacing, and `ScaleUtil.sp(...)` for font sizes (dampened so text scales less than layout). Factors use the screen's shortest side for widths and longest side for heights, so they don't change with orientation, and are capped at `1.2` so phones scale exactly as designed while tablets don't render everything twice as large. They are first computed at startup in `main()`; `App` in `lib/main.dart` calls `ScaleUtil.update(MediaQuery.sizeOf(context))` from `MaterialApp.router`'s `builder`, so they are recalculated whenever the window size changes (rotation, iPad split view). Also exposes `num` extensions (`16.w`, `16.h`, `14.sp`, `8.r`, where `r` scales by width), which `AppSpacing` uses.
+- `AppLayout` (`lib/core/constants/app_layout.dart`): Tablet layout constants: `tabletBreakpoint` (600), and max widths for text-heavy screens (`maxContentWidth`), grids (`maxCatalogWidth`), the bottom navigation bar (`maxNavBarWidth`) and auth forms (`maxAuthFormWidth`). All are wider than a phone, so phones are unaffected. `AppShell` caps the tab bar at `maxNavBarWidth` and centres it on tablets.
+- `ContentWidth` (`lib/core/widgets/containers/content_width.dart`): Centres its `child` and stops it growing past `maxWidth` (default `AppLayout.maxContentWidth`) by adding horizontal inset on wider screens. Narrower screens get no extra padding. Wrap a screen body in it, e.g. `ContentWidth(child: ListView(...))`, or pass another width such as `AppLayout.maxAuthFormWidth`.
 - `AppRichText` (`lib/core/widgets/text/app_rich_text.dart`): Renders a list of `AppTextSpan`s in one paragraph, with the same arguments as `AppText` (`style`, `color`, `textAlign`, `maxLines`, `overflow`) and the same defaults. Each `AppTextSpan` takes its text plus an optional `style` (merged over the parent style), `color` and `onTap` (tap recognizers are created and disposed by the widget).
 - `SvgIcon` (`lib/core/widgets/icons/svg_icon.dart`): Renders an SVG asset with `flutter_svg`, e.g. `SvgIcon(AppSvgs.arrowBack, size: 24)`. Tinted with `context.colors.text` by default (override with `color`, or pass `keepOriginalColors: true` to render the SVG's own colors, e.g. for logos); `size` is a design value scaled by width so the icon stays square.
 - `AppTheme` (`lib/core/theme/app_theme.dart`): Builds `ThemeData` for `light` and `dark` modes, configuring Material 3, `scaffoldBackgroundColor`, `colorScheme`, and theme extensions.

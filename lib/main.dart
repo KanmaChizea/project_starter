@@ -47,6 +47,10 @@ class App extends StatelessWidget {
       darkTheme: AppTheme.dark,
       themeMode: context.watch<ThemeCubit>().state,
       routerConfig: router,
+      builder: (context, child) {
+        ScaleUtil.update(MediaQuery.sizeOf(context));
+        return child!;
+      },
     );
   }
 }

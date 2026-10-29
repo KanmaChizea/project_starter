@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:ui';
 
 class ScaleUtil {
@@ -6,14 +7,30 @@ class ScaleUtil {
   static double _widthFactor = 1.0;
   static double _heightFactor = 1.0;
 
+  // No phone goes past this, so phones scale exactly as designed while
+  // tablets don't blow everything up to twice the size.
+  static const _maxFactor = 1.2;
+
   /// [designWidth] & [designHeight] the dimensions your UI was designed for
   static void init({double designWidth = 375, double designHeight = 812}) {
     final view = PlatformDispatcher.instance.views.first;
-    final deviceWidth = view.physicalSize.width / view.devicePixelRatio;
-    final deviceHeight = view.physicalSize.height / view.devicePixelRatio;
+    update(
+      view.physicalSize / view.devicePixelRatio,
+      designWidth: designWidth,
+      designHeight: designHeight,
+    );
+  }
 
-    _widthFactor = deviceWidth / designWidth;
-    _heightFactor = deviceHeight / designHeight;
+  /// Recalculates the factors for a new window size, e.g. after rotating or
+  /// resizing an iPad split view. Uses the shortest and longest sides so
+  /// sizes don't change with orientation.
+  static void update(
+    Size size, {
+    double designWidth = 375,
+    double designHeight = 812,
+  }) {
+    _widthFactor = min(size.shortestSide / designWidth, _maxFactor);
+    _heightFactor = min(size.longestSide / designHeight, _maxFactor);
   }
 
   /// Scale font size. Only 30% of the width factor is applied so text
