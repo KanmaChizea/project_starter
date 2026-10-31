@@ -12,16 +12,22 @@ void main(List<String> argv) {
   final (feature, screenArg) = _parseArgs(argv);
   final screen = screenArg ?? feature;
 
-  if (!File('pubspec.yaml').existsSync()) _fail('Run this from the project root.');
+  if (!File('pubspec.yaml').existsSync()) {
+    _fail('Run this from the project root.');
+  }
   for (final name in [feature, screen]) {
     if (!namePattern.hasMatch(name)) {
       _fail('"$name" must be lower_snake_case, e.g. user_profile.');
     }
   }
 
-  final package = RegExp(r'^name: (\S+)', multiLine: true)
-      .firstMatch(File('pubspec.yaml').readAsStringSync())?[1];
-  if (package == null) _fail('Could not read the package name from pubspec.yaml.');
+  final package = RegExp(
+    r'^name: (\S+)',
+    multiLine: true,
+  ).firstMatch(File('pubspec.yaml').readAsStringSync())?[1];
+  if (package == null) {
+    _fail('Could not read the package name from pubspec.yaml.');
+  }
 
   final f = _Names(feature);
   final s = _Names(screen);
@@ -29,14 +35,21 @@ void main(List<String> argv) {
   final isNewFeature = !Directory(lib).existsSync();
 
   final files = {
-    '$lib/data/repositories/${f.snake}_repository.dart': _repository(package, f),
+    '$lib/data/repositories/${f.snake}_repository.dart': _repository(
+      package,
+      f,
+    ),
     '$lib/data/services/${f.snake}_service.dart': _service(f),
     '$lib/ui/models/${s.snake}_ui_state.dart': _uiState(s),
-    '$lib/ui/views/${s.snake}_view_model.dart': _viewModel(f, s),
-    '$lib/ui/views/${s.snake}_view.dart': _view(f, s),
+    '$lib/ui/views/${s.snake}/${s.snake}_view_model.dart': _viewModel(f, s),
+    '$lib/ui/views/${s.snake}/${s.snake}_view.dart': _view(f, s),
   };
 
-  stdout.writeln(isNewFeature ? 'Creating feature "$feature"' : 'Adding to feature "$feature"');
+  stdout.writeln(
+    isNewFeature
+        ? 'Creating feature "$feature"'
+        : 'Adding to feature "$feature"',
+  );
   for (final MapEntry(key: path, value: content) in files.entries) {
     final file = File(path);
     if (file.existsSync()) {
@@ -49,7 +62,10 @@ void main(List<String> argv) {
     stdout.writeln('  create  $path');
   }
 
-  Process.runSync('dart', ['format', ...files.keys.where((p) => File(p).existsSync())]);
+  Process.runSync('dart', [
+    'format',
+    ...files.keys.where((p) => File(p).existsSync()),
+  ]);
 
   if (isNewFeature) {
     stdout.writeln('''
@@ -76,7 +92,8 @@ Then make ${s.pascal}View reachable (README → Navigation → Adding a route):
 // Templates
 // ---------------------------------------------------------------------------
 
-String _repository(String package, _Names f) => '''
+String _repository(String package, _Names f) =>
+    '''
 import 'package:$package/core/network/api_client.dart';
 
 class ${f.pascal}Repository {
@@ -89,7 +106,8 @@ class ${f.pascal}Repository {
 }
 ''';
 
-String _service(_Names f) => '''
+String _service(_Names f) =>
+    '''
 import '../repositories/${f.snake}_repository.dart';
 
 class ${f.pascal}Service {
@@ -102,7 +120,8 @@ class ${f.pascal}Service {
 }
 ''';
 
-String _uiState(_Names s) => '''
+String _uiState(_Names s) =>
+    '''
 import 'package:equatable/equatable.dart';
 
 class ${s.pascal}UiState extends Equatable {
@@ -126,11 +145,12 @@ class ${s.pascal}UiState extends Equatable {
 }
 ''';
 
-String _viewModel(_Names f, _Names s) => '''
+String _viewModel(_Names f, _Names s) =>
+    '''
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../data/services/${f.snake}_service.dart';
-import '../models/${s.snake}_ui_state.dart';
+import '../../../data/services/${f.snake}_service.dart';
+import '../../models/${s.snake}_ui_state.dart';
 
 class ${s.pascal}ViewModel extends Cubit<${s.pascal}UiState> {
   ${s.pascal}ViewModel({required this._${f.camel}Service})
@@ -143,12 +163,13 @@ class ${s.pascal}ViewModel extends Cubit<${s.pascal}UiState> {
 }
 ''';
 
-String _view(_Names f, _Names s) => '''
+String _view(_Names f, _Names s) =>
+    '''
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../data/services/${f.snake}_service.dart';
-import '../models/${s.snake}_ui_state.dart';
+import '../../../data/services/${f.snake}_service.dart';
+import '../../models/${s.snake}_ui_state.dart';
 import '${s.snake}_view_model.dart';
 
 class ${s.pascal}View extends StatelessWidget {
